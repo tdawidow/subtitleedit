@@ -3413,6 +3413,43 @@ public partial class TextToSpeechViewModel : ObservableObject
 
             var silenceFileName = await GenerateSilenceWaveFile(previousStepResult, cancellationToken);
 
+            // v3: render each 60-second span once, then stream-copy adjacent PCM
+            // windows into the finished WAV. This avoids re-encoding a longer and
+            // longer audio track hundreds of times. Preserve the original merge
+            // as a safe fallback if an unusual input defeats the fast mixer.
+            var fastMergeWatch = Stopwatch.StartNew();
+            try
+            {
+                var fastResult = await TtsFastWaveMerger.MergeAsync(
+                    previousStepResult, silenceFileName, _waveFolder, cancellationToken,
+                    (finished, count) =>
+                    {
+                        ProgressText = $"Merging audio (optimized): {finished} / {count} windows";
+                        ProgressValue = (double)finished / count * 100.0;
+                    });
+
+                if (!string.Equals(fastResult, silenceFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    DeleteFileNoError(silenceFileName);
+                }
+
+                Se.WriteToolsLog($"TTS merge v3: completed in {fastMergeWatch.Elapsed.TotalSeconds:0.0}s");
+                ProgressValue = 100;
+                return fastResult;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                SeLogger.Error(ex, "TTS optimized WAV merge failed; reverting to original merger.");
+                Se.WriteToolsLog(
+                    $"TTS merge v3: optimized merge failed after {fastMergeWatch.Elapsed.TotalSeconds:0.0}s; " +
+                    $"using original FFmpeg merger. Error: {ex}", true);
+            }
+
+            // Fallback: original verified per-line FFmpeg mixing method.
             var inputFileName = silenceFileName;
             ProgressValue = 0;
             for (var index = 0; index < previousStepResult.Length; index++)
