@@ -89,6 +89,12 @@ public interface ITtsDownloadService
 public class TtsDownloadService : ITtsDownloadService
 {
     private readonly HttpClient _httpClient;
+
+    // Shared across TTS workers: Azure F0 permits 20 requests per 60 seconds.
+    // Four seconds between starts is a deliberately conservative default.
+    private static readonly SemaphoreSlim AzureSpeechGate = new(1, 1);
+    private static readonly TimeSpan AzureSpeechMinimumInterval = TimeSpan.FromSeconds(4);
+    private static DateTimeOffset AzureSpeechNextRequestUtc = DateTimeOffset.MinValue;
     private const string WindowsPiperUrl = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip";
     private const string MacPiperUrl = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_macos_x64.tar.gz";
     private const string LinuxPiperUrl = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz";
@@ -526,33 +532,91 @@ public class TtsDownloadService : ITtsDownloadService
         CancellationToken cancellationToken)
     {
         var url = $"https://{region}.tts.speech.microsoft.com/cognitiveservices/v1";
-
         var text = Utilities.UnbreakLine(inputText);
 
-        // Use the voice's own locale in the SSML instead of hardcoded en-US - the voice name
-        // usually wins, but a mismatched xml:lang can affect pronunciation of locale-ambiguous
-        // text (numbers, dates) for non-English voices.
+        // Match the voice's locale so numbers and names use the right language.
         var locale = string.IsNullOrWhiteSpace(voice.Locale) ? "en-US" : voice.Locale;
         var data = $"<speak version='1.0' xml:lang='{locale}'><voice xml:lang='{locale}' xml:gender='{voice.Gender}' name='{voice.ShortName}'>{System.Net.WebUtility.HtmlEncode(text)}</voice></speak>";
-        using var requestMessage = new HttpRequestMessage(HttpMethod.Post, url);
-        requestMessage.Content = new StringContent(data, Encoding.UTF8);
 
-        requestMessage.Headers.TryAddWithoutValidation("Content-Type", "ssml+xml");
-        requestMessage.Headers.TryAddWithoutValidation("accept", "audio/mpeg");
-        requestMessage.Headers.TryAddWithoutValidation("X-Microsoft-OutputFormat", "audio-16khz-32kbitrate-mono-mp3");
-        requestMessage.Headers.TryAddWithoutValidation("User-Agent", "SubtitleEdit");
-        requestMessage.Headers.TryAddWithoutValidation("Ocp-Apim-Subscription-Key", apiKey.Trim());
-
-        var result = await _httpClient.SendAsync(requestMessage, cancellationToken);
-        await result.Content.CopyToAsync(stream, cancellationToken);
-        if (!result.IsSuccessStatusCode)
+        // Serialize requests from every Azure TTS worker. On 429, keep the
+        // queue paused and retry this exact segment rather than skipping it.
+        await AzureSpeechGate.WaitAsync(cancellationToken);
+        try
         {
-            var error = Encoding.UTF8.GetString(stream.ToArray()).Trim();
-            SeLogger.Error($"Azure TTS failed calling API as base address {_httpClient.BaseAddress} : Status code={result.StatusCode} {error}" + Environment.NewLine + "Data=" + data);
-            return false;
-        }
+            var throttles = 0;
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
 
-        return true;
+                var wait = AzureSpeechNextRequestUtc - DateTimeOffset.UtcNow;
+                if (wait > TimeSpan.Zero)
+                {
+                    await Task.Delay(wait, cancellationToken);
+                }
+
+                // Reserve the next start even if this network attempt fails.
+                AzureSpeechNextRequestUtc = DateTimeOffset.UtcNow.Add(AzureSpeechMinimumInterval);
+
+                // Request content must be recreated for each retry.
+                using var request = new HttpRequestMessage(HttpMethod.Post, url);
+                request.Content = new StringContent(data, Encoding.UTF8);
+                request.Headers.TryAddWithoutValidation("Content-Type", "ssml+xml");
+                request.Headers.TryAddWithoutValidation("accept", "audio/mpeg");
+                request.Headers.TryAddWithoutValidation("X-Microsoft-OutputFormat", "audio-16khz-32kbitrate-mono-mp3");
+                request.Headers.TryAddWithoutValidation("User-Agent", "SubtitleEdit");
+                request.Headers.TryAddWithoutValidation("Ocp-Apim-Subscription-Key", apiKey.Trim());
+
+                using var response = await _httpClient.SendAsync(request, cancellationToken);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    throttles++;
+
+                    // Honor Retry-After when present. If not supplied (or too
+                    // short), wait 15/30/60/120 seconds with a cap at 120.
+                    var retryAfter = response.Headers.RetryAfter;
+                    var serverDelay = retryAfter?.Delta
+                        ?? (retryAfter?.Date is DateTimeOffset date
+                            ? date - DateTimeOffset.UtcNow
+                            : TimeSpan.Zero);
+                    var retryDelay = TimeSpan.FromSeconds(15 * (1 << Math.Min(throttles - 1, 3)));
+                    if (serverDelay > retryDelay)
+                    {
+                        retryDelay = serverDelay;
+                    }
+
+                    AzureSpeechNextRequestUtc = DateTimeOffset.UtcNow.Add(retryDelay);
+                    Se.WriteToolsLog($"Azure TTS: HTTP 429; waiting {retryDelay.TotalSeconds:0} s before retry {throttles + 1}. Cancel TTS to stop.");
+                    // Other Azure requests cannot overtake this retry.
+                    continue;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var error = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
+                    SeLogger.Error($"Azure TTS failed calling API at {url}: Status code={response.StatusCode} {TruncateForLog(error)}");
+                    return false; // Non-throttle errors (e.g. 401) are not retried.
+                }
+
+                await response.Content.CopyToAsync(stream, cancellationToken);
+                if (stream.Length == 0)
+                {
+                    SeLogger.Error($"Azure TTS returned an empty audio response from {url}.");
+                    return false;
+                }
+
+                if (throttles > 0)
+                {
+                    Se.WriteToolsLog($"Azure TTS: recovered segment after {throttles} HTTP 429 response(s).");
+                }
+
+                return true;
+            }
+        }
+        finally
+        {
+            AzureSpeechGate.Release();
+        }
     }
 
     public async Task<bool> DownloadMurfSpeak(
