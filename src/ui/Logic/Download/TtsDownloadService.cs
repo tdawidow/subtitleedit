@@ -90,11 +90,10 @@ public class TtsDownloadService : ITtsDownloadService
 {
     private readonly HttpClient _httpClient;
 
-    // Shared across TTS workers: Azure F0 permits 20 requests per 60 seconds.
-    // Four seconds between starts is a deliberately conservative default.
+    // Serialize Azure TTS requests, matching the existing per-subtitle workflow.
+    // No delay on successful requests. On HTTP 429, pause the queue and retry
+    // the same segment until success or cancellation.
     private static readonly SemaphoreSlim AzureSpeechGate = new(1, 1);
-    private static readonly TimeSpan AzureSpeechMinimumInterval = TimeSpan.FromSeconds(4);
-    private static DateTimeOffset AzureSpeechNextRequestUtc = DateTimeOffset.MinValue;
     private const string WindowsPiperUrl = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip";
     private const string MacPiperUrl = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_macos_x64.tar.gz";
     private const string LinuxPiperUrl = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz";
@@ -548,15 +547,6 @@ public class TtsDownloadService : ITtsDownloadService
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var wait = AzureSpeechNextRequestUtc - DateTimeOffset.UtcNow;
-                if (wait > TimeSpan.Zero)
-                {
-                    await Task.Delay(wait, cancellationToken);
-                }
-
-                // Reserve the next start even if this network attempt fails.
-                AzureSpeechNextRequestUtc = DateTimeOffset.UtcNow.Add(AzureSpeechMinimumInterval);
-
                 // Request content must be recreated for each retry.
                 using var request = new HttpRequestMessage(HttpMethod.Post, url);
                 request.Content = new StringContent(data, Encoding.UTF8);
@@ -585,9 +575,10 @@ public class TtsDownloadService : ITtsDownloadService
                         retryDelay = serverDelay;
                     }
 
-                    AzureSpeechNextRequestUtc = DateTimeOffset.UtcNow.Add(retryDelay);
                     Se.WriteToolsLog($"Azure TTS: HTTP 429; waiting {retryDelay.TotalSeconds:0} s before retry {throttles + 1}. Cancel TTS to stop.");
-                    // Other Azure requests cannot overtake this retry.
+                    // Keep the Azure queue stopped while waiting. The next
+                    // attempt uses this exact SSML, with a fresh HTTP request.
+                    await Task.Delay(retryDelay, cancellationToken);
                     continue;
                 }
 
