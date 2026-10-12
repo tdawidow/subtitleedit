@@ -1,0 +1,78 @@
+# Lektor PL — wersja 4
+
+Wersja 4 bazuje na `azure-f0-wave-merge-v3` (commit `ec36837`). Zachowuje
+syntezę Azure, korektę synchronizacji i szybkie scalanie WAV z wersji 3.
+
+## Procedura
+
+1. Wczytaj poprawiony SRT w głównym oknie Subtitle Edit i otwórz Text to speech.
+2. Włącz **Moduł Lektor PL v4**. Przycisk **Wybierz źródłowe wideo…** pozwala
+   wczytać film bez zamykania TTS. Wideo otwarte wcześniej w programie jest
+   używane automatycznie.
+3. Włącz **Add audio to video file** i wygeneruj lektora normalnie. Po korekcie
+   klipów program scala lektora i pyta o miejsce zapisu zsynchronizowanego WAV.
+4. Po zapisaniu WAV otwiera się okno **Lektor PL — wersja 4**. Wybierz konkretną
+   ścieżkę źródłową, kodek, bitrate, poziomy i tryb miksowania.
+5. **Miks + MKV** zapisuje niezależny miks audio, następnie tworzy i sprawdza MKV.
+
+Przycisk **Lektor PL: istniejący WAV…** uruchamia eksport bez generowania TTS.
+W samym oknie eksportu można zmienić źródłowe wideo i WAV.
+
+## Ustawienia i pliki
+
+Domyślne ustawienia: AC3 384 kb/s, stereo, 48 kHz, lektor 100%, oryginał 100%,
+dynamiczne ściszanie. Próg -30 dB, ratio 8, czas ściszania 80 ms, czas
+przywracania 500 ms. Dynamiczne ściszanie reaguje na rzeczywisty poziom WAV,
+nie na napisy; nie obiecuje stałego procentu tłumienia. W trybie stałym ustaw
+np. oryginał na 15–25%. Limiter ogranicza sumę do około -1 dBFS i kompensuje
+własne opóźnienie. Nie dodajemy żadnego dodatkowego przesunięcia lektora.
+
+Dostępne kodeki: AC3, AAC (plik M4A), MP3, FLAC. Bitrate dobiera się z wartości
+obsługiwanych przez dany kodek; dla FLAC nie ma bitrate. Poziomy miksowania
+i ustawienia kodowania są zapamiętywane oddzielnie od ustawień dawnego eksportu.
+
+Dla wyniku `Film_PL.mkv` miks jest zapisywany np. jako `Film_PL_MIX_PL.ac3`.
+WAV zapisany w poprzednim etapie pozostaje w wybranym wcześniej miejscu.
+
+- **Tylko miks** zapisuje samo audio.
+- **MKV z istniejącego miksu…** pozwala wskazać gotowy miks, zachowuje jego kodek
+  i nie wymaga obecności WAV ani ponownego kodowania miksu.
+
+MKV zachowuje wszystkie rozpoznane strumienie źródłowe, metadane, rozdziały
+i załączniki. Obraz i oryginalne ścieżki są kopiowane bez rekompresji. Nowy miks
+jest pierwszą ścieżką audio, z językiem `pol`, tytułem `Polski lektor PL`,
+Default=1, Forced=0. Pozostałe audio oraz napisy mają Default=0 i Forced=0;
+inne właściwości ścieżek pozostają zachowane. Ścieżki nadal można wybierać ręcznie.
+Odtwarzacz może kierować się własnymi preferencjami językowymi.
+
+Miks jest dopasowany do dłuższego z dwóch plików: źródła i WAV. Brakujący
+koniec krótszego audio zostaje uzupełniony ciszą. Oryginalnego obrazu ani audio
+nie skracamy. Lektor dłuższy niż film może więc przedłużyć czas kontenera;
+jego końcowe kwestie wymagają kontroli synchronizacji w TTS.
+
+## Kontrola i wznowienie
+
+Eksport używa FFmpeg skonfigurowanego w Subtitle Edit. Nie wymaga ffprobe.
+Wynik powstaje w pliku tymczasowym obok docelowego i zastępuje go dopiero
+po udanej kontroli. Sprawdzamy liczbę i kodeki ścieżek, rozdziały, język i flagi,
+liczbę pakietów oraz długość każdego oryginalnego strumienia audio/wideo.
+Kontrola odczytuje skompresowane pakiety całego filmu, więc duże pliki mogą
+wymagać dodatkowego czasu. Ostateczny miks także jest sprawdzany przed zapisem.
+
+Anulowanie lub błąd nie usuwa zapisanych WAV ani ukończonego miksu. Istniejący
+MKV pozostaje nietknięty, jeśli próba zastąpienia nie przejdzie kontroli.
+Plików źródłowych nie wolno wybrać jako wynikowych. Strumień nieobsługiwany
+przez MKV powoduje błąd eksportu, zamiast cichego pominięcia.
+
+V4 miksuje wybrane oryginalne audio z lektorem. Oddzielne funkcje usuwania
+oryginalnej mowy i dodawania muzyki należą do dawnego eksportu; w trybie v4
+nie są stosowane. Aby używać dawnej procedury, wyłącz **Moduł Lektor PL v4**.
+
+## Sprawdzenie zmian
+
+`LektorExportTests` sprawdzają cztery kodeki i oba tryby na syntetycznym filmie
+z dwiema ścieżkami audio, dwoma napisami, rozdziałem i załącznikiem. Obejmują
+wybór drugiej ścieżki, odzyskanie głośności w ciszy, niezmienność wejść,
+ponowny mux bez WAV, anulowanie i błąd nieobsługiwanego strumienia.
+Wymagają działającego FFmpeg; `FFMPEG_TEST_PATH` może wskazywać jego pełną ścieżkę.
+Workflow `Lektor PL v4 - Windows x64` wykonuje testy i tworzy paczkę portable ZIP.

@@ -69,6 +69,7 @@ using ElevenLabsSettingsViewModel = Nikse.SubtitleEdit.Features.Video.TextToSpee
 using ReviewSpeechViewModel = Nikse.SubtitleEdit.Features.Video.TextToSpeech.ReviewSpeech.ReviewSpeechViewModel;
 using Timer = System.Timers.Timer;
 using Nikse.SubtitleEdit.UiLogic.Media;
+using Nikse.SubtitleEdit.Features.Video.TextToSpeech.LektorPl;
 
 namespace Nikse.SubtitleEdit.Features.Video.TextToSpeech;
 
@@ -103,6 +104,8 @@ public partial class TextToSpeechViewModel : ObservableObject
     [ObservableProperty] private bool _isVoiceComboEnabled;
     [ObservableProperty] private bool _doReviewAudioClips;
     [ObservableProperty] private bool _doGenerateVideoFile;
+    [ObservableProperty] private bool _useLektorPlExport = true;
+    private string _lastSavedNarratorWave = string.Empty;
     [ObservableProperty] private bool _doAddBackgroundMusic;
     [ObservableProperty] private bool _isEdgeTtsEngine;
     [ObservableProperty] private bool _isGenerating;
@@ -295,6 +298,7 @@ public partial class TextToSpeechViewModel : ObservableObject
 
         DoReviewAudioClips = Se.Settings.Video.TextToSpeech.ReviewAudioClips;
         DoGenerateVideoFile = Se.Settings.Video.TextToSpeech.GenerateVideoFile;
+        UseLektorPlExport = Se.Settings.Video.TextToSpeech.UseLektorPlExport;
         DoAddBackgroundMusic = Se.Settings.Video.BackgroundMusic.AddToTextToSpeech;
 
         if (SelectedEngine is AzureSpeech)
@@ -331,6 +335,7 @@ public partial class TextToSpeechViewModel : ObservableObject
         Se.Settings.Video.TextToSpeech.Voice = SelectedVoice?.Name ?? string.Empty;
         Se.Settings.Video.TextToSpeech.ReviewAudioClips = DoReviewAudioClips;
         Se.Settings.Video.TextToSpeech.GenerateVideoFile = DoGenerateVideoFile;
+        Se.Settings.Video.TextToSpeech.UseLektorPlExport = UseLektorPlExport;
         Se.Settings.Video.BackgroundMusic.AddToTextToSpeech = DoAddBackgroundMusic;
 
         if (SelectedEngine is AzureSpeech)
@@ -2344,7 +2349,31 @@ public partial class TextToSpeechViewModel : ObservableObject
     [RelayCommand]
     private async Task ShowEncodingSettings()
     {
+        if (UseLektorPlExport)
+        {
+            await OpenLektorExport();
+            return;
+        }
         await _windowService.ShowDialogAsync<EncodingSettingsWindow, EncodingSettingsViewModel>(Window!, vm => { });
+    }
+
+    [RelayCommand]
+    private async Task OpenLektorExport()
+    {
+        if (Window == null || IsGenerating) return;
+        await new LektorExportWindow(_fileHelper, _videoFileName, _lastSavedNarratorWave).ShowDialog<string?>(Window);
+    }
+
+    [RelayCommand]
+    private async Task SelectLektorVideo()
+    {
+        if (Window == null || IsGenerating) return;
+        var file = await _fileHelper.PickOpenVideoFile(Window, "Wybierz źródłowe wideo do lektora PL");
+        if (string.IsNullOrEmpty(file)) return;
+        _videoFileName = file;
+        _mediaInfo = null;
+        HasVideoFile = true;
+        VideoInfo = CapFileName(Path.GetFileName(file), 40);
     }
 
     [RelayCommand]
@@ -2373,7 +2402,7 @@ public partial class TextToSpeechViewModel : ObservableObject
 
     private bool ShouldRemoveOriginalSpeech()
     {
-        return Se.Settings.Video.TextToSpeech.RemoveOriginalSpeech &&
+        return !UseLektorPlExport && Se.Settings.Video.TextToSpeech.RemoveOriginalSpeech &&
                DoGenerateVideoFile &&
                !string.IsNullOrEmpty(_videoFileName) &&
                File.Exists(_videoFileName);
@@ -3177,9 +3206,10 @@ public partial class TextToSpeechViewModel : ObservableObject
         var outputFolder = Path.GetDirectoryName(audioFileName)!;
 
         File.Move(mergedAudioFileName, audioFileName, true);
+        _lastSavedNarratorWave = audioFileName;
         Se.WriteToolsLog($"TTS merge done: wrote \"{audioFileName}\"");
 
-        if (DoAddBackgroundMusic)
+        if (DoAddBackgroundMusic && !UseLektorPlExport)
         {
             try
             {
@@ -3199,6 +3229,13 @@ public partial class TextToSpeechViewModel : ObservableObject
 
     private async Task HandleAddToVideo(string mergedAudioFileName, string outputFolder, CancellationToken cancellationToken)
     {
+        if (UseLektorPlExport && DoGenerateVideoFile && Window != null)
+        {
+            // The durable WAV is already saved. The independent dialog owns cancellation,
+            // retries, mix export and MKV verification without rerunning the TTS engine.
+            await new LektorExportWindow(_fileHelper, _videoFileName, mergedAudioFileName).ShowDialog<string?>(Window);
+            return;
+        }
         if (DoGenerateVideoFile && !string.IsNullOrEmpty(_videoFileName))
         {
             var outputFileName = await AddAudioToVideoFile(mergedAudioFileName, outputFolder, cancellationToken);

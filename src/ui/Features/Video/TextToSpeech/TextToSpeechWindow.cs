@@ -674,6 +674,19 @@ public class TextToSpeechWindow : Window
         };
         var panelReviewAudioClips = WithCheckBoxHint(checkBoxReviewAudioClips, Se.Language.Video.TextToSpeech.ReviewAudioSegmentsHint);
 
+        var lektorControls = new StackPanel
+        {
+            Spacing = 5,
+            [!InputElement.IsEnabledProperty] = new Binding("!" + nameof(vm.IsGenerating))
+        };
+        lektorControls.Children.Add(new CheckBox
+        {
+            Content = "Moduł Lektor PL v4",
+            [!CheckBox.IsCheckedProperty] = new Binding(nameof(vm.UseLektorPlExport)) { Mode = BindingMode.TwoWay }
+        });
+        lektorControls.Children.Add(UiUtil.MakeButton("Wybierz źródłowe wideo…", vm.SelectLektorVideoCommand));
+        lektorControls.Children.Add(UiUtil.MakeButton("Lektor PL: istniejący WAV…", vm.OpenLektorExportCommand));
+
         var checkBoxAddAudioToVideoFile = new CheckBox
         {
             Content = Se.Language.Video.TextToSpeech.AddAudioToVideoFile,
@@ -713,6 +726,7 @@ public class TextToSpeechWindow : Window
             }
         };
         var panelAddBackgroundMusicWithHint = WithCheckBoxHint(panelAddBackgroundMusic, Se.Language.Video.BackgroundMusic.AddBackgroundMusicHint);
+        panelAddBackgroundMusicWithHint.Bind(InputElement.IsEnabledProperty, new Binding("!" + nameof(vm.UseLektorPlExport)));
 
         var buttonAdvanced = UiUtil.MakeButton(Se.Language.General.AdvancedDotDotDot, vm.ShowAdvancedSettingsCommand)
             .WithMarginTop(5);
@@ -728,6 +742,7 @@ public class TextToSpeechWindow : Window
                 new RowDefinition { Height = new GridLength(1, GridUnitType.Auto) },
                 new RowDefinition { Height = new GridLength(1, GridUnitType.Auto) },
                 new RowDefinition { Height = new GridLength(1, GridUnitType.Star) },
+                new RowDefinition { Height = new GridLength(1, GridUnitType.Auto) },
             },
             ColumnDefinitions =
             {
@@ -743,6 +758,7 @@ public class TextToSpeechWindow : Window
         grid.Add(panelAddAudioWithHint, 1, 0);
         grid.Add(panelAddBackgroundMusicWithHint, 2, 0);
         grid.Add(buttonAdvanced, 3, 0);
+        grid.Add(lektorControls, 4, 0);
 
         return UiUtil.MakeBorderForControl(grid);
     }
