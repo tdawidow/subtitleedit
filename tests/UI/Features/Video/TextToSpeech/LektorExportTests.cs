@@ -48,6 +48,105 @@ public class LektorExportTests
     }
 
     [Fact]
+    public void AttachedPicturesAreNotFilmTracksAndCodecErrorsIdentifyTheStream()
+    {
+        var source = LektorMediaProbe.Parse("""
+            Stream #0:0: Video: h264, yuv420p, 64x64
+            Stream #0:1(eng): Audio: aac, stereo
+            Stream #0:2: Video: png, rgb24, 64x64 (attached pic)
+            Stream #0:3: Attachment: none
+            """);
+        var mix = LektorMediaProbe.Parse("Stream #0:0: Audio: ac3, stereo");
+        var output = LektorMediaProbe.Parse("""
+            Stream #0:0: Video: h264, yuv420p, 64x64
+            Stream #0:1(pol): Audio: ac3, stereo (default)
+            Stream #0:2(eng): Audio: aac, stereo
+            Stream #0:3: Attachment: ttf
+            Stream #0:4: Video: png, rgb24, 64x64 (attached pic)
+            """);
+        // v4.1 expected png at output #1 and rejected this correct media layout.
+        Assert.True(source.Tracks[2].IsAttachedPicture);
+        Assert.False(source.Tracks[2].IsVideo || source.Tracks[2].IsMedia);
+        LektorExportService.ValidateTracks(source, mix, output);
+
+        var wrongCodec = LektorMediaProbe.Parse("""
+            Stream #0:0: Video: hevc, yuv420p, 64x64
+            Stream #0:1(pol): Audio: ac3, stereo (default)
+            Stream #0:2(eng): Audio: aac, stereo
+            """);
+        var error = Assert.Throws<InvalidOperationException>(() => LektorExportService.ValidateTracks(source, mix, wrongCodec));
+        Assert.Contains("#0", error.Message);
+        Assert.Contains("h264", error.Message);
+        Assert.Contains("hevc", error.Message);
+    }
+
+    [Fact]
+    public async Task ExportPreservesCoverArtAndFontAttachmentsWithoutTreatingThemAsVideo()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "lektor-v411-okładki-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var (original, wave) = await MakeFixture(folder);
+            var files = Path.Combine(AppContext.BaseDirectory, "Files");
+            var source = Path.Combine(folder, "film z okładkami.mkv");
+            var jpeg = Path.Combine(folder, "cover.jpg");
+            await Run(["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=red:s=64x64", "-frames:v", "1", "-update", "1", jpeg]);
+            await Run(["-v", "error", "-y", "-i", original, "-map", "0", "-c", "copy",
+                "-attach", Path.Combine(files, "SeTrimTest.ttf"), "-metadata:s:t:1", "mimetype=font/ttf",
+                "-attach", Path.Combine(files, "00_02_09_640__00_02_16_920.png"), "-metadata:s:t:2", "mimetype=image/png",
+                "-attach", Path.Combine(files, "SeTrimTestCff.otf"), "-metadata:s:t:3", "mimetype=application/vnd.ms-opentype",
+                "-attach", jpeg, "-metadata:s:t:4", "mimetype=image/jpeg", source]);
+            var before = await LektorMediaProbe.ReadAsync(source, TestContext.Current.CancellationToken);
+            Assert.Equal(1, before.Tracks.Count(t => t.IsVideo));
+            Assert.Equal(2, before.Tracks.Count(t => t.IsAttachedPicture));
+            var mix = Path.Combine(folder, "mix.ac3");
+            await Run(["-v", "error", "-y", "-i", wave, "-c:a", "ac3", "-b:a", "224k", mix]);
+            File.Delete(wave);
+            var output = Path.Combine(folder, "wynik.mkv");
+            await LektorExportService.ExportAsync(source, wave, mix, output, -1, new(),
+                TestContext.Current.CancellationToken, useExistingMix: true);
+            var after = await LektorMediaProbe.ReadAsync(output, TestContext.Current.CancellationToken);
+            Assert.Equal(1, after.Tracks.Count(t => t.IsVideo));
+            Assert.Equal(2, after.Tracks.Count(t => t.IsAttachedPicture));
+            Assert.Equal(5, after.Tracks.Count(t => !t.IsMedia));
+            Assert.Equal(await DecodeVideo(source), await DecodeVideo(output));
+            var packets = await LektorMediaProbe.AuditAsync(output, TestContext.Current.CancellationToken);
+            Assert.Equal(4, packets.Count); // Real film + PL + two original audio, no cover packets.
+            Assert.Equal(40, packets[0].Count);
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AttachmentControlRejectsMissingAndSameSizeCorruptedData(bool sameSizeCorruption)
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "lektor-v411-attachments-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var (source, _) = await MakeFixture(folder);
+            var output = Path.Combine(folder, "bad.mkv");
+            var args = new List<string> { "-v", "error", "-y", "-i", source, "-map", "0:V", "-map", "0:a", "-map", "0:s", "-c", "copy" };
+            if (sameSizeCorruption)
+            {
+                var attachment = Path.Combine(folder, "attachment.txt");
+                await File.WriteAllTextAsync(attachment, "Attachment destroyed", TestContext.Current.CancellationToken);
+                Assert.Equal("Attachment preserved".Length, "Attachment destroyed".Length);
+                args.AddRange(["-attach", attachment, "-metadata:s:t:0", "mimetype=text/plain"]);
+            }
+            args.Add(output);
+            await Run(args.ToArray());
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() => LektorMkvMuxer.VerifyAttachmentsAsync(
+                LektorMkvMuxer.ResolveExecutable(), source, output, TestContext.Current.CancellationToken));
+            Assert.Contains(sameSizeCorruption ? "SHA-256" : "załączników", error.Message);
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+
+    [Fact]
     public void VideoTimelineRejectsRepeatedOrShiftedFrameTimes()
     {
         var source = new LektorMediaProbe.PacketExtent { VideoTimestamps = [0, 0.04, 0.08, 0.12] };
@@ -113,7 +212,7 @@ public class LektorExportTests
         process.StartInfo.Arguments = string.Empty;
         var args = new List<string> { "-v", "error", "-xerror" };
         if (seek != null) args.AddRange(["-ss", seek]);
-        args.AddRange(["-i", file, "-map", "0:v:0", "-fps_mode", "passthrough"]);
+        args.AddRange(["-i", file, "-map", "0:V:0", "-fps_mode", "passthrough"]);
         if (seek != null) args.AddRange(["-frames:v", "1"]);
         args.AddRange(["-f", "framemd5", "-"]);
         foreach (var arg in args) process.StartInfo.ArgumentList.Add(arg);
@@ -292,7 +391,7 @@ public class LektorExportTests
         await File.WriteAllTextAsync(meta, ";FFMETADATA1\ntitle=Lektor test\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=4000\ntitle=Chapter 1\n");
         await File.WriteAllTextAsync(attachment, "Attachment preserved");
         var video = Path.Combine(folder, "source.mkv"); var wave = Path.Combine(folder, "voice.wav");
-        await Run(["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=blue:s=64x64:r=10:d=4",
+        await Run(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=64x64:r=10:d=4",
             "-f", "lavfi", "-i", "aevalsrc=0.002*sin(2*PI*330*t):s=48000:d=4",
             "-f", "lavfi", "-i", "aevalsrc=0.08*sin(2*PI*220*t):s=48000:d=4",
             "-i", sub, "-i", sub, "-i", meta, "-map", "0:v", "-map", "1:a", "-map", "2:a", "-map", "3:s", "-map", "4:s",

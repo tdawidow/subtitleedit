@@ -1,4 +1,22 @@
-# Lektor PL — wersja 4.1
+# Lektor PL — wersja 4.1.1
+
+## Poprawka kontroli MKV w 4.1.1
+
+Grafiki okładek PNG/JPEG bywają opisane przez FFmpeg jako `Video (attached pic)`.
+W 4.1 kontrola mogła porównać taką grafikę z nowym audio PL i odrzucić poprawny
+MKV komunikatem o zmianie kodeka. W 4.1.1 okładki są traktowane jako załączniki;
+sprawdzanie pakietów i czasu obrazu dotyczy wyłącznie właściwego filmu.
+
+Załączniki (okładki, czcionki, pozostałe pliki) są sprawdzane niezależnie:
+porównujemy nazwy, typy MIME, rozmiary i SHA-256 rzeczywistej zawartości.
+Do odczytu służy **mkvextract**, dołączony wraz z mkvmerge w katalogu MKVToolNix.
+Kolejność i numery załączników mogą się zmienić; ich zawartość musi być identyczna.
+Akceptowane są równoważne starsze i nowsze nazwy MIME czcionek.
+Kontrola typów i kodeków obrazu, audio oraz napisów pozostaje aktywna.
+
+Przy rozbieżności komunikat podaje konkretny indeks, typ i kodek ścieżki.
+`tools-log.txt` zawiera zestawienie ścieżek źródła, miksu i wyniku do diagnostyki.
+Miksowanie, AC3, dynamiczne ściszanie i synteza TTS są niezmienione.
 
 ## Poprawka tworzenia MKV
 
@@ -32,7 +50,7 @@ syntezę Azure, korektę synchronizacji i szybkie scalanie WAV z wersji 3.
    używane automatycznie.
 3. Włącz **Add audio to video file** i wygeneruj lektora normalnie. Po korekcie
    klipów program scala lektora i pyta o miejsce zapisu zsynchronizowanego WAV.
-4. Po zapisaniu WAV otwiera się okno **Lektor PL — wersja 4.1**. Wybierz konkretną
+4. Po zapisaniu WAV otwiera się okno **Lektor PL — wersja 4.1.1**. Wybierz konkretną
    ścieżkę źródłową, kodek, bitrate, poziomy i tryb miksowania.
 5. **Miks + MKV** zapisuje niezależny miks audio, następnie tworzy i sprawdza MKV.
 

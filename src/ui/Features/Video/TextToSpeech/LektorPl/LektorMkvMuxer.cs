@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -16,6 +17,8 @@ namespace Nikse.SubtitleEdit.Features.Video.TextToSpeech.LektorPl;
 internal static class LektorMkvMuxer
 {
     internal sealed record Track(int Id, string Type);
+    internal sealed record Attachment(int Id, string Name, string Mime, long Size);
+    private sealed record AttachmentFingerprint(string Name, string Mime, long Size, string Hash);
 
     internal static string ResolveExecutable()
     {
@@ -51,6 +54,75 @@ internal static class LektorMkvMuxer
         // mkvmerge IDs are NOT FFmpeg global stream indexes (attachments are separate).
         return document.RootElement.GetProperty("tracks").EnumerateArray()
             .Select(t => new Track(t.GetProperty("id").GetInt32(), t.GetProperty("type").GetString()!)).ToList();
+    }
+
+    internal static List<Attachment> ParseAttachments(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.GetProperty("attachments").EnumerateArray().Select(a => new Attachment(
+            a.GetProperty("id").GetInt32(), a.GetProperty("file_name").GetString()!,
+            a.GetProperty("content_type").GetString()!, a.GetProperty("size").GetInt64())).ToList();
+    }
+
+    internal static string NormalizeAttachmentMime(string mime) => mime.Trim().ToLowerInvariant() switch
+    {
+        "font/ttf" or "font/sfnt" or "font/collection" or "application/x-truetype-font" or
+            "application/x-truetype-fonts" => "font/truetype",
+        "font/otf" or "application/vnd.ms-opentype" => "font/opentype",
+        var other => other
+    };
+
+    internal static async Task VerifyAttachmentsAsync(string executable, string source, string output, CancellationToken token)
+    {
+        var original = ParseAttachments(await RunAsync(executable, ["-J", source], token));
+        var copied = ParseAttachments(await RunAsync(executable, ["-J", output], token));
+        if (original.Count != copied.Count)
+            throw new InvalidOperationException($"Nie zachowano kompletu załączników: {original.Count} → {copied.Count}.");
+        if (original.Count == 0) return;
+        var extract = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(executable))!,
+            OperatingSystem.IsWindows() ? "mkvextract.exe" : "mkvextract");
+        if (!File.Exists(extract))
+            throw new FileNotFoundException("Kontrola załączników wymaga mkvextract z tego samego katalogu MKVToolNix co mkvmerge.", extract);
+        var folder = Path.Combine(Path.GetTempPath(), "lektor-attachments-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var before = await FingerprintsAsync(extract, source, original, Path.Combine(folder, "source"), token);
+            var after = await FingerprintsAsync(extract, output, copied, Path.Combine(folder, "output"), token);
+            // Attachment IDs/order may change; compare the actual bytes and meaningful metadata.
+            var remaining = after.ToList();
+            foreach (var item in before)
+            {
+                if (!remaining.Remove(item))
+                    throw new InvalidOperationException($"Nie zachowano załącznika „{item.Name}” ({item.Mime}, {item.Size} bajtów) lub zmieniła się jego zawartość SHA-256.");
+            }
+        }
+        finally
+        {
+            try { Directory.Delete(folder, true); }
+            catch (Exception ex) { Se.WriteToolsLog("Lektor PL: attachment cleanup failed: " + ex.Message, true); }
+        }
+    }
+
+    private static async Task<List<AttachmentFingerprint>> FingerprintsAsync(string executable, string file,
+        IReadOnlyList<Attachment> attachments, string folder, CancellationToken token)
+    {
+        Directory.CreateDirectory(folder);
+        var args = new List<string> { file, "attachments" };
+        for (var i = 0; i < attachments.Count; i++)
+            args.Add($"{attachments[i].Id}:{Path.Combine(folder, i + ".bin")}");
+        await RunAsync(executable, args, token, captureJson: false);
+        var result = new List<AttachmentFingerprint>();
+        for (var i = 0; i < attachments.Count; i++)
+        {
+            var item = attachments[i];
+            await using var data = File.OpenRead(Path.Combine(folder, i + ".bin"));
+            if (data.Length != item.Size)
+                throw new InvalidOperationException("Nieprawidłowy rozmiar załącznika: " + item.Name);
+            var hash = Convert.ToHexString(await SHA256.HashDataAsync(data, token));
+            result.Add(new(item.Name, NormalizeAttachmentMime(item.Mime), item.Size, hash));
+        }
+        return result;
     }
 
     internal static List<string> Arguments(string video, string mix, string output,

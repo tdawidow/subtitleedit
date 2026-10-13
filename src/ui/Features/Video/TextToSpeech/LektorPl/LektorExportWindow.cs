@@ -43,7 +43,7 @@ public sealed class LektorExportWindow : Window
     {
         _files = files;
         UiUtil.InitializeWindow(this, GetType().Name);
-        Title = "Lektor PL — wersja 4.1";
+        Title = "Lektor PL — wersja 4.1.1";
         Width = 820; Height = 730; MinWidth = 600; MinHeight = 500;
         _video.Text = video; _wave.Text = wave;
         try { _mkvmerge.Text = LektorMkvMuxer.ResolveExecutable(); }
@@ -167,7 +167,7 @@ public sealed class LektorExportWindow : Window
             var probe = await LektorMediaProbe.ReadAsync(_video.Text!, CancellationToken.None);
             var audio = probe.Tracks.Where(t => t.Type == "Audio").ToList();
             _track.ItemsSource = audio; _track.SelectedIndex = audio.Count > 0 ? 0 : -1;
-            _status.Text = $"Wideo: {probe.Tracks.Count(t => t.Type == "Video")}; audio: {audio.Count}; napisy: {probe.Tracks.Count(t => t.Type == "Subtitle")}; rozdziały: {probe.Chapters}.";
+            _status.Text = $"Wideo: {probe.Tracks.Count(t => t.IsVideo)}; audio: {audio.Count}; napisy: {probe.Tracks.Count(t => t.Type == "Subtitle")}; załączniki: {probe.Tracks.Count(t => !t.IsMedia)}; rozdziały: {probe.Chapters}.";
         }
         catch (Exception ex) { _status.Text = "Nie można odczytać wideo: " + ex.Message; }
         finally { _inputs.IsEnabled = true; _actions.IsEnabled = true; }

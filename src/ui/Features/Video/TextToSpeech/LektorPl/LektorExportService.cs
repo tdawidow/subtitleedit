@@ -62,7 +62,7 @@ internal static class LektorExportService
         }
         progress?.Invoke("Odczyt ścieżek źródłowych…");
         var source = await LektorMediaProbe.ReadAsync(video, token);
-        if (!source.Tracks.Any(t => t.Type == "Video")) throw new ArgumentException("Plik źródłowy nie zawiera obrazu.");
+        if (!source.Tracks.Any(t => t.IsVideo)) throw new ArgumentException("Plik źródłowy nie zawiera obrazu filmu.");
         if (!source.Tracks.Any(t => t.Type == "Audio" && t.Index == streamIndex) && !useExistingMix)
             throw new ArgumentException("Wybrana ścieżka audio nie istnieje w pliku źródłowym.");
 
@@ -98,10 +98,13 @@ internal static class LektorExportService
             await LektorMkvMuxer.MuxAsync(muxer, video, mix, tempMkv, token);
             progress?.Invoke("Kontrola ścieżek, flag i długości…");
             var output = await LektorMediaProbe.ReadAsync(tempMkv, token);
+            Se.WriteToolsLog("Lektor PL: kontrola MKV\nŹródło:\n" + DescribeTracks(source) +
+                "\nMiks:\n" + DescribeTracks(mixInfo) + "\nWynik:\n" + DescribeTracks(output));
             ValidateTracks(source, mixInfo, output);
+            await LektorMkvMuxer.VerifyAttachmentsAsync(muxer, video, tempMkv, token);
             var before = await LektorMediaProbe.AuditAsync(video, token);
             var after = await LektorMediaProbe.AuditAsync(tempMkv, token);
-            var videos = source.Tracks.Count(t => t.Type == "Video");
+            var videos = source.Tracks.Count(t => t.IsVideo);
             if (after.Count != before.Count + 1) throw new InvalidOperationException("Brak oczekiwanych ścieżek audio/wideo.");
             for (var i = 0; i < before.Count; i++)
             {
@@ -125,14 +128,18 @@ internal static class LektorExportService
 
     internal static void ValidateTracks(LektorMediaProbe source, LektorMediaProbe mix, LektorMediaProbe output)
     {
-        var expected = source.Tracks.Where(t => t.Type == "Video").Concat(mix.Tracks)
-            .Concat(source.Tracks.Where(t => t.Type != "Video")).ToList();
-        if (expected.Count != output.Tracks.Count || source.Chapters != output.Chapters)
-            throw new InvalidOperationException("Nie zachowano kompletu ścieżek lub rozdziałów.");
+        // FFmpeg exposes cover art as Video (attached pic). It is NOT a film track;
+        // Matroska attachments are validated separately by name, MIME, size and SHA-256.
+        var expected = source.Tracks.Where(t => t.IsVideo).Concat(mix.Tracks.Where(t => t.IsMedia))
+            .Concat(source.Tracks.Where(t => t.IsMedia && !t.IsVideo)).ToList();
+        var actual = output.Tracks.Where(t => t.IsMedia).ToList();
+        if (expected.Count != actual.Count || source.Chapters != output.Chapters)
+            throw new InvalidOperationException($"Nie zachowano kompletu ścieżek lub rozdziałów. Ścieżki: {expected.Count} → {actual.Count}; rozdziały: {source.Chapters} → {output.Chapters}.");
         for (var i = 0; i < expected.Count; i++)
         {
-            if (expected[i].Type != output.Tracks[i].Type || CodecName(expected[i]) != CodecName(output.Tracks[i]))
-                throw new InvalidOperationException("Nie zachowano typu lub kodeka jednej ze ścieżek.");
+            if (expected[i].Type != actual[i].Type || CodecName(expected[i]) != CodecName(actual[i]))
+                throw new InvalidOperationException($"Nie zachowano typu lub kodeka ścieżki wynikowej #{actual[i].Index}.\n" +
+                    $"Oczekiwano: {expected[i].Type} | {expected[i].Info}\nOtrzymano: {actual[i].Type} | {actual[i].Info}");
         }
         var audio = output.Tracks.Where(t => t.Type == "Audio").ToList();
         if (audio.Count == 0 || audio[0].Language != "pol" || !audio[0].Default || audio[0].Forced ||
@@ -141,6 +148,9 @@ internal static class LektorExportService
     }
 
     private static string CodecName(LektorTrack track) => track.Info.Split([',', ' '], StringSplitOptions.RemoveEmptyEntries)[0];
+
+    private static string DescribeTracks(LektorMediaProbe probe) => string.Join('\n', probe.Tracks.Select(t =>
+        $"#{t.Index} | {t.Type}{(t.IsAttachedPicture ? " (załączona grafika)" : "")} | {t.Language} | {t.Title} | {t.Info}"));
 
     private static async Task VerifyMixAsync(string file, double seconds, CancellationToken token)
     {

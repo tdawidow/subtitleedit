@@ -14,6 +14,9 @@ namespace Nikse.SubtitleEdit.Features.Video.TextToSpeech.LektorPl;
 internal sealed record LektorTrack(int Index, string Type, string Info, string Language, bool Default, bool Forced)
 {
     public string Title { get; set; } = string.Empty;
+    public bool IsAttachedPicture { get; init; }
+    public bool IsMedia => Type != "Attachment" && !IsAttachedPicture;
+    public bool IsVideo => Type == "Video" && !IsAttachedPicture;
     public override string ToString() => $"#{Index} | {Language} | {Title} | {Info}";
 }
 
@@ -53,7 +56,10 @@ internal sealed class LektorMediaProbe
             {
                 current = new LektorTrack(int.Parse(stream.Groups[1].Value, CultureInfo.InvariantCulture),
                     stream.Groups[3].Value, stream.Groups[4].Value, stream.Groups[2].Value,
-                    text.Contains("(default)", StringComparison.Ordinal), text.Contains("(forced)", StringComparison.Ordinal));
+                    text.Contains("(default)", StringComparison.Ordinal), text.Contains("(forced)", StringComparison.Ordinal))
+                {
+                    IsAttachedPicture = text.Contains("(attached pic)", StringComparison.Ordinal)
+                };
                 result.Tracks.Add(current);
             }
             else if (text.StartsWith("Stream #", StringComparison.Ordinal))
@@ -93,7 +99,7 @@ internal sealed class LektorMediaProbe
         using var process = FfmpegGenerator.GetProcess(string.Empty, null);
         process.StartInfo.Arguments = string.Empty;
         foreach (var arg in new[] { "-nostdin", "-hide_banner", "-v", "error", "-i", file,
-            "-map", "0:v?", "-map", "0:a?", "-c", "copy", "-f", "framecrc", "-" })
+            "-map", "0:V?", "-map", "0:a?", "-c", "copy", "-f", "framecrc", "-" })
             process.StartInfo.ArgumentList.Add(arg);
         process.StartInfo.RedirectStandardOutput = true;
         process.StartInfo.RedirectStandardError = true;
