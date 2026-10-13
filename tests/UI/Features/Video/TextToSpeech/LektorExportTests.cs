@@ -147,6 +147,26 @@ public class LektorExportTests
     }
 
     [Fact]
+    public async Task AttachmentControlAcceptsWindowsPathsNormalisedToBasename()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "lektor-v411-names-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var (source, _) = await MakeFixture(folder);
+            var withPath = Path.Combine(folder, "windows-path.mkv");
+            await Run(["-v", "error", "-y", "-i", source, "-map", "0:V", "-map", "0:a", "-map", "0:s", "-c", "copy",
+                "-attach", Path.Combine(folder, "attachment.txt"), "-metadata:s:t:0", "mimetype=text/plain",
+                "-metadata:s:t:0", @"filename=C:\anime\fonts\attachment.txt", withPath]);
+            // These two files have identical attachment data, but one uses the full
+            // Windows path and the other the basename, as mkvmerge normalizes it.
+            await LektorMkvMuxer.VerifyAttachmentsAsync(LektorMkvMuxer.ResolveExecutable(), withPath, source,
+                TestContext.Current.CancellationToken);
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+
+    [Fact]
     public void VideoTimelineRejectsRepeatedOrShiftedFrameTimes()
     {
         var source = new LektorMediaProbe.PacketExtent { VideoTimestamps = [0, 0.04, 0.08, 0.12] };

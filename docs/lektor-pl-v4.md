@@ -11,6 +11,7 @@ Załączniki (okładki, czcionki, pozostałe pliki) są sprawdzane niezależnie:
 porównujemy nazwy, typy MIME, rozmiary i SHA-256 rzeczywistej zawartości.
 Do odczytu służy **mkvextract**, dołączony wraz z mkvmerge w katalogu MKVToolNix.
 Kolejność i numery załączników mogą się zmienić; ich zawartość musi być identyczna.
+Pełna ścieżka załącznika może zostać zastąpiona samą nazwą pliku przez MKVToolNix.
 Akceptowane są równoważne starsze i nowsze nazwy MIME czcionek.
 Kontrola typów i kodeków obrazu, audio oraz napisów pozostaje aktywna.
 

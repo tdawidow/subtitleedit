@@ -120,7 +120,10 @@ internal static class LektorMkvMuxer
             if (data.Length != item.Size)
                 throw new InvalidOperationException("Nieprawidłowy rozmiar załącznika: " + item.Name);
             var hash = Convert.ToHexString(await SHA256.HashDataAsync(data, token));
-            result.Add(new(item.Name, NormalizeAttachmentMime(item.Mime), item.Size, hash));
+            // FFmpeg on Windows can store an absolute path as the attachment name;
+            // mkvmerge strips directories. Handle both separators on every platform.
+            var name = item.Name.Replace('\\', '/').Split('/')[^1];
+            result.Add(new(name, NormalizeAttachmentMime(item.Mime), item.Size, hash));
         }
         return result;
     }
