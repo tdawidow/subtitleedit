@@ -76,7 +76,13 @@ internal sealed class LektorMediaProbe
         public double First { get; set; } = double.PositiveInfinity;
         public double Last { get; set; } = double.NegativeInfinity;
         public double Seconds => Count == 0 ? 0 : Last - First;
+        public List<double>? VideoTimestamps { get; set; }
     }
+
+    internal static bool SameVideoTimeline(PacketExtent before, PacketExtent after) =>
+        before.VideoTimestamps != null && after.VideoTimestamps != null &&
+        before.VideoTimestamps.Count == after.VideoTimestamps.Count &&
+        before.VideoTimestamps.Zip(after.VideoTimestamps).All(p => Math.Abs(p.First - p.Second) <= 0.005);
 
     // Scan compressed packets, never decode video. Per-stream counts expose a truncated
     // picture even when the container duration is extended by the new audio.
@@ -106,6 +112,14 @@ internal sealed class LektorMediaProbe
                 { timeBases[index] = numerator / denominator; extents[index] = new PacketExtent(); }
                 return;
             }
+            if (line.StartsWith("#media_type ", StringComparison.Ordinal))
+            {
+                var parts = line[12..].Split(':');
+                if (parts.Length == 2 && int.TryParse(parts[0], out var index) &&
+                    parts[1].Trim() == "video" && extents.TryGetValue(index, out var extent))
+                    extent.VideoTimestamps = [];
+                return;
+            }
             if (line.StartsWith('#')) return;
             var fields = line.Split(',');
             if (fields.Length >= 6 && int.TryParse(fields[0], out var stream) && timeBases.TryGetValue(stream, out var tb) &&
@@ -115,6 +129,7 @@ internal sealed class LektorMediaProbe
                 extent.Count++;
                 extent.First = Math.Min(extent.First, pts * tb);
                 extent.Last = Math.Max(extent.Last, (pts + duration) * tb);
+                extent.VideoTimestamps?.Add(pts * tb);
             }
         };
         await process.StartAndWaitAsync(token, TimeSpan.FromHours(4));

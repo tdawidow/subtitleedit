@@ -1,4 +1,25 @@
-# Lektor PL — wersja 4
+# Lektor PL — wersja 4.1
+
+## Poprawka tworzenia MKV
+
+W 4.1 kontener tworzy **mkvmerge z MKVToolNix**, ten sam silnik, którego używa
+MKVToolNix GUI. FFmpeg nadal odpowiada za niezmienione miksowanie audio i AC3.
+Usunięto dotychczasowy remuks FFmpeg z generowaniem PTS. Obraz nie jest kodowany
+ponownie; mkvmerge odczytuje źródłowe znaczniki czasu i dane kodeka.
+
+Paczka Windows 4.1 zawiera MKVToolNix. Program wykrywa też instalację w Program
+Files lub PATH. Jeśli masz MKVToolNix w innym miejscu, wskaż **mkvmerge.exe**
+w polu **MKVToolNix / mkvmerge**. **Tylko miks** nie wymaga MKVToolNix.
+Brak mkvmerge nie uruchamia dawnej metody FFmpeg jako zastępstwa.
+
+Aby wykorzystać już wygenerowane poprawne AC3, wybierz **MKV z istniejącego
+miksu…**, wskaż oryginalny film i AC3. Nie potrzeba WAV ani ponownego TTS.
+Wybierz nową nazwę wynikowego MKV.
+
+Kontrola porównuje także znaczniki czasu każdej klatki obrazu i początek ścieżek.
+Testy regresji dekodują wszystkie klatki ruchomego H.264 i HEVC (8 i 10 bitów) z klatkami B,
+sprawdzają identyczność obrazu i przewijanie oraz wariant ze zmienną częstością
+klatek. Zastępuje to poleganie wyłącznie na liczbie pakietów nieruchomego filmu.
 
 Wersja 4 bazuje na `azure-f0-wave-merge-v3` (commit `ec36837`). Zachowuje
 syntezę Azure, korektę synchronizacji i szybkie scalanie WAV z wersji 3.
@@ -11,7 +32,7 @@ syntezę Azure, korektę synchronizacji i szybkie scalanie WAV z wersji 3.
    używane automatycznie.
 3. Włącz **Add audio to video file** i wygeneruj lektora normalnie. Po korekcie
    klipów program scala lektora i pyta o miejsce zapisu zsynchronizowanego WAV.
-4. Po zapisaniu WAV otwiera się okno **Lektor PL — wersja 4**. Wybierz konkretną
+4. Po zapisaniu WAV otwiera się okno **Lektor PL — wersja 4.1**. Wybierz konkretną
    ścieżkę źródłową, kodek, bitrate, poziomy i tryb miksowania.
 5. **Miks + MKV** zapisuje niezależny miks audio, następnie tworzy i sprawdza MKV.
 
@@ -52,7 +73,10 @@ jego końcowe kwestie wymagają kontroli synchronizacji w TTS.
 
 ## Kontrola i wznowienie
 
-Eksport używa FFmpeg skonfigurowanego w Subtitle Edit. Nie wymaga ffprobe.
+Audio i kontrola używają FFmpeg skonfigurowanego w Subtitle Edit. Nie wymaga ffprobe.
+MKV tworzy mkvmerge z MKVToolNix; identyfikatory ścieżek odczytuje z jego JSON,
+ponieważ nie są to indeksy strumieni FFmpeg. Ostrzeżenia mkvmerge zatrzymują
+zastąpienie docelowego pliku i są pokazywane użytkownikowi do sprawdzenia.
 Wynik powstaje w pliku tymczasowym obok docelowego i zastępuje go dopiero
 po udanej kontroli. Sprawdzamy liczbę i kodeki ścieżek, rozdziały, język i flagi,
 liczbę pakietów oraz długość każdego oryginalnego strumienia audio/wideo.
@@ -74,5 +98,6 @@ nie są stosowane. Aby używać dawnej procedury, wyłącz **Moduł Lektor PL v4
 z dwiema ścieżkami audio, dwoma napisami, rozdziałem i załącznikiem. Obejmują
 wybór drugiej ścieżki, odzyskanie głośności w ciszy, niezmienność wejść,
 ponowny mux bez WAV, anulowanie i błąd nieobsługiwanego strumienia.
-Wymagają działającego FFmpeg; `FFMPEG_TEST_PATH` może wskazywać jego pełną ścieżkę.
+Wymagają działających FFmpeg i mkvmerge; `FFMPEG_TEST_PATH` oraz
+`MKVMERGE_TEST_PATH` mogą wskazywać ich pełne ścieżki.
 Workflow `Lektor PL v4 - Windows x64` wykonuje testy i tworzy paczkę portable ZIP.

@@ -22,7 +22,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Install FFmpeg for integration tests
+      - name: Install FFmpeg and MKVToolNix for integration tests
         shell: pwsh
         run: |
           choco install ffmpeg --no-progress -y
@@ -30,6 +30,12 @@ jobs:
           $ffmpeg = (Get-Command ffmpeg).Source
           "FFMPEG_TEST_PATH=$ffmpeg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           & $ffmpeg -version
+          choco install mkvtoolnix --no-progress -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $mkvmerge = "C:\Program Files\MKVToolNix\mkvmerge.exe"
+          if (!(Test-Path $mkvmerge)) { throw "mkvmerge not found" }
+          "MKVMERGE_TEST_PATH=$mkvmerge" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & $mkvmerge --version
 
       - name: Build and verify Lektor PL export
         shell: pwsh
@@ -49,14 +55,16 @@ jobs:
           Copy-Item "libmpv-temp/*" "./publish/lektor-pl-v4-win-x64/"
           Copy-Item "./LICENSE" "./publish/lektor-pl-v4-win-x64/LICENSE"
           Copy-Item "./docs/lektor-pl-v4.md" "./publish/lektor-pl-v4-win-x64/Lektor-PL-v4.md"
+          # Ship the working MKVToolNix installation (including DLLs and license files).
+          Copy-Item "C:\Program Files\MKVToolNix" "./publish/lektor-pl-v4-win-x64/MKVToolNix" -Recurse
           Get-ChildItem "./publish/lektor-pl-v4-win-x64" -Filter "*.pdb" -Recurse -File | Remove-Item -Force
-          Compress-Archive -Path "./publish/lektor-pl-v4-win-x64/*" -DestinationPath "./SubtitleEdit-LektorPL-v4-Windows-x64.zip"
+          Compress-Archive -Path "./publish/lektor-pl-v4-win-x64/*" -DestinationPath "./SubtitleEdit-LektorPL-v4.1-Windows-x64.zip"
 
       - name: Upload portable build
         uses: actions/upload-artifact@v5
         with:
-          name: SubtitleEdit-LektorPL-v4-Windows-x64
-          path: ./SubtitleEdit-LektorPL-v4-Windows-x64.zip
+          name: SubtitleEdit-LektorPL-v4.1-Windows-x64
+          path: ./SubtitleEdit-LektorPL-v4.1-Windows-x64.zip
           if-no-files-found: error
 
       - name: Upload test results

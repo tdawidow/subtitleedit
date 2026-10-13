@@ -46,25 +46,12 @@ internal static class LektorExportService
         return args;
     }
 
-    internal static List<string> MuxArguments(string video, string mix, string output, LektorMediaProbe source)
-    {
-        var args = new List<string> { "-nostdin", "-hide_banner", "-y", "-fflags", "+genpts", "-i", video, "-i", mix };
-        // Video first, new PL audio first among audio, then every other source stream.
-        foreach (var track in source.Tracks.Where(t => t.Type == "Video")) args.AddRange(["-map", $"0:{track.Index}"]);
-        args.AddRange(["-map", "1:a:0"]);
-        foreach (var track in source.Tracks.Where(t => t.Type != "Video")) args.AddRange(["-map", $"0:{track.Index}"]);
-        args.AddRange(["-map_metadata", "0", "-map_chapters", "0", "-c", "copy",
-            "-disposition:a", "-default-forced", "-disposition:s", "-default-forced", "-disposition:a:0", "default",
-            "-metadata:s:a:0", "language=pol", "-metadata:s:a:0", "title=Polski lektor PL", output]);
-        // No -shortest: a short TTS file must never shorten the original video/audio.
-        return args;
-    }
-
     internal static async Task<string> ExportAsync(string video, string wave, string mix, string? mkv,
         int streamIndex, LektorExportOptions options, CancellationToken token, Action<string>? progress = null,
         bool useExistingMix = false)
     {
         options.Validate();
+        token.ThrowIfCancellationRequested();
         GuardOutput(mix, video, wave, useExistingMix);
         if (mkv != null)
         {
@@ -103,11 +90,12 @@ internal static class LektorExportService
         var mixInfo = await LektorMediaProbe.ReadAsync(mix, token);
         if (mixInfo.Tracks.Count != 1 || mixInfo.Tracks[0].Type != "Audio")
             throw new ArgumentException("Miks musi zawierać dokładnie jedną ścieżkę audio.");
+        var muxer = LektorMkvMuxer.ResolveExecutable();
         var tempMkv = TemporarySibling(mkv);
         try
         {
-            progress?.Invoke("Tworzenie MKV…");
-            await RunAsync(MuxArguments(video, mix, tempMkv, source), token);
+            progress?.Invoke("Tworzenie MKV przez MKVToolNix…");
+            await LektorMkvMuxer.MuxAsync(muxer, video, mix, tempMkv, token);
             progress?.Invoke("Kontrola ścieżek, flag i długości…");
             var output = await LektorMediaProbe.ReadAsync(tempMkv, token);
             ValidateTracks(source, mixInfo, output);
@@ -120,6 +108,10 @@ internal static class LektorExportService
                 var copied = after[i < videos ? i : i + 1];
                 if (copied.Count != before[i].Count || Math.Abs(copied.Seconds - before[i].Seconds) > 0.25)
                     throw new InvalidOperationException("Oryginalna ścieżka audio/wideo została skrócona lub zmieniona.");
+                if (Math.Abs(copied.First - before[i].First) > 0.05)
+                    throw new InvalidOperationException("Zmieniła się synchronizacja oryginalnej ścieżki audio/wideo.");
+                if (i < videos && !LektorMediaProbe.SameVideoTimeline(before[i], copied))
+                    throw new InvalidOperationException("Zmieniły się znaczniki czasu klatek obrazu.");
             }
             if (after[videos].Count == 0 || Math.Abs(after[videos].Seconds - mixInfo.Duration) > 0.5)
                 throw new InvalidOperationException("Nieprawidłowa długość dodanego lektora PL.");

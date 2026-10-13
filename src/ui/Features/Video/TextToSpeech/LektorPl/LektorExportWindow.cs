@@ -20,6 +20,7 @@ public sealed class LektorExportWindow : Window
     private readonly IFileHelper _files;
     private readonly TextBox _video = new() { IsReadOnly = true };
     private readonly TextBox _wave = new() { IsReadOnly = true };
+    private readonly TextBox _mkvmerge = new() { IsReadOnly = true };
     private readonly ComboBox _track = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly ComboBox _mode = new() { ItemsSource = new[] { "Dynamiczne ściszanie podczas mowy", "Stały poziom oryginału" } };
     private readonly ComboBox _codec = new() { ItemsSource = Enum.GetValues<LektorCodec>() };
@@ -42,9 +43,11 @@ public sealed class LektorExportWindow : Window
     {
         _files = files;
         UiUtil.InitializeWindow(this, GetType().Name);
-        Title = "Lektor PL — wersja 4";
+        Title = "Lektor PL — wersja 4.1";
         Width = 820; Height = 730; MinWidth = 600; MinHeight = 500;
         _video.Text = video; _wave.Text = wave;
+        try { _mkvmerge.Text = LektorMkvMuxer.ResolveExecutable(); }
+        catch (FileNotFoundException) { _mkvmerge.PlaceholderText = "Wybierz mkvmerge z MKVToolNix (tylko dla MKV)"; }
         var saved = Se.Settings.Video.TextToSpeech.LektorExport ?? new LektorExportOptions();
         _mode.SelectedIndex = saved.Mode == LektorMixMode.Fixed ? 1 : 0;
         _codec.SelectedItem = Enum.IsDefined(saved.Codec) ? saved.Codec : LektorCodec.Ac3;
@@ -73,6 +76,16 @@ public sealed class LektorExportWindow : Window
         {
             var file = await _files.PickOpenFile(this, "Wybierz zsynchronizowany WAV", "WAV", "*.wav");
             if (!string.IsNullOrEmpty(file)) _wave.Text = file;
+        }));
+        _inputs.Children.Add(FileRow("MKVToolNix / mkvmerge", _mkvmerge, async () =>
+        {
+            var file = await _files.PickOpenFile(this, "Wybierz mkvmerge z MKVToolNix", "mkvmerge", OperatingSystem.IsWindows() ? "mkvmerge.exe" : "mkvmerge");
+            if (!string.IsNullOrEmpty(file))
+            {
+                _mkvmerge.Text = file;
+                Se.Settings.Video.TextToSpeech.LektorMkvmergePath = file;
+                Se.SaveSettings();
+            }
         }));
         AddRow("Audio do miksowania", _track);
         AddRow("Tryb miksowania", _mode);

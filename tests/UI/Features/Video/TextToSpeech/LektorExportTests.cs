@@ -42,6 +42,90 @@ public class LektorExportTests
     {
         var ffmpeg = Environment.GetEnvironmentVariable("FFMPEG_TEST_PATH");
         if (!string.IsNullOrEmpty(ffmpeg)) Configuration.Settings.General.FFmpegLocation = ffmpeg;
+        var mkvmerge = Environment.GetEnvironmentVariable("MKVMERGE_TEST_PATH");
+        if (!string.IsNullOrEmpty(mkvmerge))
+            Nikse.SubtitleEdit.Logic.Config.Se.Settings.Video.TextToSpeech.LektorMkvmergePath = mkvmerge;
+    }
+
+    [Fact]
+    public void VideoTimelineRejectsRepeatedOrShiftedFrameTimes()
+    {
+        var source = new LektorMediaProbe.PacketExtent { VideoTimestamps = [0, 0.04, 0.08, 0.12] };
+        Assert.True(LektorMediaProbe.SameVideoTimeline(source,
+            new() { VideoTimestamps = [0, 0.041, 0.08, 0.12] }));
+        Assert.False(LektorMediaProbe.SameVideoTimeline(source,
+            new() { VideoTimestamps = [0, 0, 0, 0.12] }));
+        Assert.False(LektorMediaProbe.SameVideoTimeline(source,
+            new() { VideoTimestamps = [0.1, 0.14, 0.18, 0.22] }));
+    }
+
+    [Theory]
+    [InlineData("libx264", false, false)]
+    [InlineData("libx265", false, false)]
+    [InlineData("libx264", true, false)]
+    [InlineData("libx264", false, true)]
+    [InlineData("libx265", false, true)]
+    public async Task MkvToolNixPreservesMovingBFramesTimestampsAndSeeking(string encoder, bool variableRate, bool tenBit)
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "lektor-v41-ruch-ąć-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var (fixture, wave) = await MakeFixture(folder);
+            var moving = Path.Combine(folder, "ruchome źródło.mkv");
+            var args = new List<string> { "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=24000/1001:d=4",
+                "-i", fixture, "-map", "0:v", "-map", "1:a", "-map", "1:s", "-map", "1:t", "-map_metadata", "1",
+                "-map_chapters", "1", "-c", "copy", "-c:v", encoder, "-preset", "fast", "-bf", "3", "-g", "24",
+                "-vf", variableRate ? "setpts=PTS+0.4/TB+if(gte(N\\,48)\\,0.2/TB\\,0)" : "setpts=PTS+0.4/TB",
+                "-fps_mode", "passthrough" };
+            if (tenBit) args.AddRange(["-pix_fmt", "yuv420p10le"]);
+            if (encoder == "libx265") args.AddRange(["-x265-params", "pools=1:frame-threads=1:log-level=error"]);
+            args.Add(moving);
+            await Run(args.ToArray());
+            var mix = Path.Combine(folder, "gotowy lektor.ac3");
+            await Run(["-v", "error", "-y", "-i", wave, "-ar", "48000", "-ac", "2", "-c:a", "ac3", "-b:a", "384k", mix]);
+            var mixBytes = await File.ReadAllBytesAsync(mix, TestContext.Current.CancellationToken);
+            File.Delete(wave); // The reported scenario: mux an already correct AC3, no TTS/mixing.
+            var output = Path.Combine(folder, "film PL.mkv");
+            await LektorExportService.ExportAsync(moving, wave, mix, output, -1, new(),
+                TestContext.Current.CancellationToken, useExistingMix: true);
+            Assert.Equal(mixBytes, await File.ReadAllBytesAsync(mix, TestContext.Current.CancellationToken));
+
+            var before = await DecodeVideo(moving);
+            var after = await DecodeVideo(output);
+            Assert.InRange(before.Count, 95, 97);
+            Assert.True(before.Distinct().Count() > 50, "Fixture must contain motion, not a still frame.");
+            Assert.Equal(before, after); // Decode EVERY frame; equal hashes prove the picture is intact.
+            foreach (var seek in new[] { "0.8", "2.0", "3.8" })
+                Assert.Equal(await DecodeVideo(moving, seek), await DecodeVideo(output, seek));
+            var sourceTimes = await LektorMediaProbe.AuditAsync(moving, TestContext.Current.CancellationToken);
+            var outputTimes = await LektorMediaProbe.AuditAsync(output, TestContext.Current.CancellationToken);
+            Assert.True(LektorMediaProbe.SameVideoTimeline(sourceTimes[0], outputTimes[0]));
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+
+    private static async Task<List<string>> DecodeVideo(string file, string? seek = null)
+    {
+        var errors = new FfmpegOutputTail();
+        var frames = new List<string>();
+        using var process = FfmpegGenerator.GetProcess(string.Empty, (_, e) => { if (e.Data != null) errors.Add(e.Data); });
+        process.StartInfo.Arguments = string.Empty;
+        var args = new List<string> { "-v", "error", "-xerror" };
+        if (seek != null) args.AddRange(["-ss", seek]);
+        args.AddRange(["-i", file, "-map", "0:v:0", "-fps_mode", "passthrough"]);
+        if (seek != null) args.AddRange(["-frames:v", "1"]);
+        args.AddRange(["-f", "framemd5", "-"]);
+        foreach (var arg in args) process.StartInfo.ArgumentList.Add(arg);
+        process.StartInfo.RedirectStandardOutput = true;
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data != null && !e.Data.StartsWith('#')) frames.Add(e.Data.Split(',')[^1].Trim());
+        };
+        await process.StartAndWaitAsync(TestContext.Current.CancellationToken, TimeSpan.FromMinutes(2));
+        Assert.True(process.ExitCode == 0, "Video decode failed: " + errors);
+        Assert.NotEmpty(frames);
+        return frames;
     }
 
     [Fact]
