@@ -58,7 +58,7 @@ internal static class LektorMkvMuxer
     {
         var order = source.Where(t => t.Type == "video").Select(t => $"0:{t.Id}")
             .Concat(new[] { $"1:{mixId}" }).Concat(source.Where(t => t.Type != "video").Select(t => $"0:{t.Id}"));
-        var args = new List<string> { "--ui-language", "en_US", "--output", output, "--track-order", string.Join(',', order) };
+        var args = new List<string> { "--output", output, "--track-order", string.Join(',', order) };
         foreach (var track in source.Where(t => t.Type is "audio" or "subtitles"))
             args.AddRange(["--default-track-flag", $"{track.Id}:0", "--forced-display-flag", $"{track.Id}:0"]);
         // Keep source timestamps, codec-private data, chapters, tags and attachments.
@@ -73,8 +73,10 @@ internal static class LektorMkvMuxer
     internal static async Task MuxAsync(string executable, string video, string mix, string output,
         CancellationToken token)
     {
-        var source = ParseTracks(await RunAsync(executable, ["--ui-language", "en_US", "-J", video], token));
-        var added = ParseTracks(await RunAsync(executable, ["--ui-language", "en_US", "-J", mix], token));
+        // Identification JSON is language-independent. Locale names differ across
+        // MKVToolNix versions/platforms, so do not force an interface translation.
+        var source = ParseTracks(await RunAsync(executable, ["-J", video], token));
+        var added = ParseTracks(await RunAsync(executable, ["-J", mix], token));
         if (added.Count != 1 || added[0].Type != "audio")
             throw new ArgumentException("Miks musi zawierać dokładnie jedną ścieżkę audio.");
         await RunAsync(executable, Arguments(video, mix, output, source, added[0].Id), token, captureJson: false);
