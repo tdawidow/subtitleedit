@@ -21,6 +21,11 @@ public sealed class LektorExportWindow : Window
     private readonly TextBox _video = new() { IsReadOnly = true };
     private readonly TextBox _wave = new() { IsReadOnly = true };
     private readonly TextBox _mkvmerge = new() { IsReadOnly = true };
+    private readonly TextBox _forcedSubtitles = new()
+    {
+        Name = "ForcedSubtitleFile", IsReadOnly = true,
+        PlaceholderText = "Opcjonalnie — wybierz SRT do wynikowego MKV"
+    };
     private readonly ComboBox _track = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly ComboBox _mode = new() { ItemsSource = new[] { "Dynamiczne ściszanie podczas mowy", "Stały poziom oryginału" } };
     private readonly ComboBox _codec = new() { ItemsSource = Enum.GetValues<LektorCodec>() };
@@ -43,7 +48,7 @@ public sealed class LektorExportWindow : Window
     {
         _files = files;
         UiUtil.InitializeWindow(this, GetType().Name);
-        Title = "Lektor PL — wersja 4.1.1";
+        Title = "Lektor PL — wersja 4.2";
         Width = 820; Height = 730; MinWidth = 600; MinHeight = 500;
         _video.Text = video; _wave.Text = wave;
         try { _mkvmerge.Text = LektorMkvMuxer.ResolveExecutable(); }
@@ -64,7 +69,7 @@ public sealed class LektorExportWindow : Window
 
         _inputs.Children.Add(new TextBlock
         {
-            Text = "Miks stereo 48 kHz. WAV lektora pozostaje zapisany. MKV zachowuje oryginalny obraz, audio, napisy, rozdziały i załączniki. Polski lektor będzie pierwszym i domyślnym audio; napisy bez automatycznego wyboru.",
+            Text = "Miks stereo 48 kHz. WAV lektora pozostaje zapisany. MKV zachowuje oryginalny obraz, audio, napisy, rozdziały i załączniki. Polski lektor będzie pierwszym i domyślnym audio. Opcjonalny SRT będzie dodany jako domyślne, wymuszone napisy PL; oryginalne napisy pozostaną do wyboru ręcznego.",
             TextWrapping = Avalonia.Media.TextWrapping.Wrap
         });
         _inputs.Children.Add(FileRow("Źródłowe wideo", _video, async () =>
@@ -87,6 +92,11 @@ public sealed class LektorExportWindow : Window
                 Se.SaveSettings();
             }
         }));
+        _inputs.Children.Add(FileRow("Wymuszone napisy PL (SRT)", _forcedSubtitles, async () =>
+        {
+            var file = await _files.PickOpenFile(this, "Wybierz wymuszone napisy PL", "SubRip (SRT)", "*.srt");
+            if (!string.IsNullOrEmpty(file)) _forcedSubtitles.Text = file;
+        }, clearable: true));
         AddRow("Audio do miksowania", _track);
         AddRow("Tryb miksowania", _mode);
         AddRow("Kodek wynikowy", _codec);
@@ -124,12 +134,18 @@ public sealed class LektorExportWindow : Window
         Grid.SetColumn(input, 1); grid.Children.Add(input); _inputs.Children.Add(grid);
     }
 
-    private static Control FileRow(string label, TextBox text, Func<Task> pick)
+    private static Control FileRow(string label, TextBox text, Func<Task> pick, bool clearable = false)
     {
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("220,*,Auto"), ColumnSpacing = 12 };
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions(clearable ? "220,*,Auto,Auto" : "220,*,Auto"), ColumnSpacing = 12 };
         grid.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
         Grid.SetColumn(text, 1); grid.Children.Add(text);
         var browse = Action("Wybierz…", pick); Grid.SetColumn(browse, 2); grid.Children.Add(browse);
+        if (clearable)
+        {
+            var clear = new Button { Name = "ClearForcedSubtitles", Content = "Wyczyść" };
+            clear.Click += (_, _) => text.Text = string.Empty;
+            Grid.SetColumn(clear, 3); grid.Children.Add(clear);
+        }
         return grid;
     }
 
@@ -224,7 +240,8 @@ public sealed class LektorExportWindow : Window
             Se.Settings.Video.TextToSpeech.LektorExport = options; Se.SaveSettings();
             _progress.IsVisible = true;
             var output = await LektorExportService.ExportAsync(video, wave, mix, mkv, track?.Index ?? -1, options, _run.Token,
-                text => Dispatcher.UIThread.Post(() => _status.Text = text), existing);
+                text => Dispatcher.UIThread.Post(() => _status.Text = text), existing,
+                forcedSubtitleFile: makeMkv ? _forcedSubtitles.Text : null);
             _status.Text = "Zakończono i sprawdzono: " + output;
             await MessageBox.Show(this, "Lektor PL", "Plik zapisany i sprawdzony:\n" + output + "\n\nMiks audio:\n" + mix,
                 MessageBoxButtons.OK, MessageBoxIcon.Information);

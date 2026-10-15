@@ -27,6 +27,12 @@ public class LektorExportTests
             Assert.Contains("Miks + MKV", labels);
             Assert.Contains("Tylko miks", labels);
             Assert.Contains("MKV z istniejącego miksu…", labels);
+            var subtitleFile = window.GetLogicalDescendants().OfType<TextBox>().Single(t => t.Name == "ForcedSubtitleFile");
+            Assert.True(string.IsNullOrEmpty(subtitleFile.Text));
+            subtitleFile.Text = "odcinek_WYMUSZONE_PL.srt";
+            window.GetLogicalDescendants().OfType<Button>().Single(b => b.Name == "ClearForcedSubtitles")
+                .RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            Assert.True(string.IsNullOrEmpty(subtitleFile.Text));
             var preview = Environment.GetEnvironmentVariable("LEKTOR_PREVIEW_PATH");
             if (!string.IsNullOrEmpty(preview))
             {
@@ -283,6 +289,142 @@ public class LektorExportTests
             "source.mkv", "voice.wav", "voice.wav", null, 1, new(), TestContext.Current.CancellationToken));
         await Assert.ThrowsAsync<ArgumentException>(() => LektorExportService.ExportAsync(
             "source.mkv", "voice.wav", "mix.ac3", "source.mkv", 1, new(), TestContext.Current.CancellationToken));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("To nie jest plik napisów")]
+    [InlineData("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nTEST\n")]
+    [InlineData("1\n00:00:02,000 --> 00:00:01,000\nTEST\n")]
+    public async Task InvalidForcedSubtitlesAreRejectedBeforeReplacingAnyOutput(string content)
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "lektor-v42-bad-srt-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var srt = Path.Combine(folder, "wymuszone.srt");
+            var mix = Path.Combine(folder, "mix.ac3");
+            var output = Path.Combine(folder, "output.mkv");
+            await File.WriteAllTextAsync(srt, content, TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(mix, "existing mix", TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(output, "existing MKV", TestContext.Current.CancellationToken);
+            await Assert.ThrowsAsync<ArgumentException>(() => LektorExportService.ExportAsync(
+                Path.Combine(folder, "source.mkv"), Path.Combine(folder, "voice.wav"), mix, output,
+                1, new(), TestContext.Current.CancellationToken, forcedSubtitleFile: srt));
+            Assert.Equal("existing mix", await File.ReadAllTextAsync(mix, TestContext.Current.CancellationToken));
+            Assert.Equal("existing MKV", await File.ReadAllTextAsync(output, TestContext.Current.CancellationToken));
+            Assert.Empty(Directory.GetFiles(folder, "*.partial-*"));
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+
+    [Fact]
+    public async Task MissingForcedSubtitleAndOutputCollisionAreRejected()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "lektor-v42-path-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var srt = Path.Combine(folder, "missing.srt");
+            await Assert.ThrowsAsync<FileNotFoundException>(() => LektorExportService.ExportAsync(
+                "source.mkv", "voice.wav", Path.Combine(folder, "mix.ac3"), Path.Combine(folder, "output.mkv"),
+                1, new(), TestContext.Current.CancellationToken, forcedSubtitleFile: srt));
+            await File.WriteAllTextAsync(srt, "1\n00:00:00,750 --> 00:00:01,500\nSYSTEM VR\n", TestContext.Current.CancellationToken);
+            var original = await File.ReadAllBytesAsync(srt, TestContext.Current.CancellationToken);
+            await Assert.ThrowsAsync<ArgumentException>(() => LektorExportService.ExportAsync(
+                "source.mkv", "voice.wav", srt, Path.Combine(folder, "output.mkv"),
+                1, new(), TestContext.Current.CancellationToken, forcedSubtitleFile: srt));
+            Assert.Equal(original, await File.ReadAllBytesAsync(srt, TestContext.Current.CancellationToken));
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ForcedPolishSrtPreservesContentTimesAndOriginalMedia(bool useExistingMix)
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "lektor-v42-napisy ąć-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var (fixture, wave) = await MakeFixture(folder);
+            var video = Path.Combine(folder, "ruchomy film.mkv");
+            await Run(["-v", "error", "-y", "-i", fixture, "-map", "0", "-c", "copy",
+                "-c:v", "libx264", "-preset", "fast", "-bf", "3", "-g", "10", video]);
+            var srt = Path.Combine(folder, "odcinek WYMUSZONE_PL.SRT");
+            // UTF-8 without BOM is especially important on Windows: mkvmerge's default
+            // input charset otherwise follows the system code page instead of the SRT.
+            await File.WriteAllTextAsync(srt, "1\r\n00:00:00,750 --> 00:00:01,500\r\nZAŻÓŁĆ GĘŚLĄ JAŹŃ\r\n\r\n" +
+                "2\r\n00:00:02,250 --> 00:00:03,750\r\n<i>ZDOBYTO UMIEJĘTNOŚĆ</i>\r\nPoziom 12\r\n",
+                new System.Text.UTF8Encoding(false), TestContext.Current.CancellationToken);
+            var sourceBytes = await File.ReadAllBytesAsync(video, TestContext.Current.CancellationToken);
+            var subtitleBytes = await File.ReadAllBytesAsync(srt, TestContext.Current.CancellationToken);
+            var waveBytes = await File.ReadAllBytesAsync(wave, TestContext.Current.CancellationToken);
+            var mix = Path.Combine(folder, "polski miks.ac3");
+            byte[]? mixBytes = null;
+            if (useExistingMix)
+            {
+                await Run(["-v", "error", "-y", "-i", wave, "-ar", "48000", "-ac", "2", "-c:a", "ac3", "-b:a", "224k", mix]);
+                mixBytes = await File.ReadAllBytesAsync(mix, TestContext.Current.CancellationToken);
+                File.Delete(wave);
+            }
+            var output = Path.Combine(folder, "wynik PL.mkv");
+            await LektorExportService.ExportAsync(video, wave, mix, output, useExistingMix ? -1 : 2,
+                new LektorExportOptions { BitrateKbps = 224 }, TestContext.Current.CancellationToken,
+                useExistingMix: useExistingMix, forcedSubtitleFile: srt);
+            Assert.Equal(sourceBytes, await File.ReadAllBytesAsync(video, TestContext.Current.CancellationToken));
+            Assert.Equal(subtitleBytes, await File.ReadAllBytesAsync(srt, TestContext.Current.CancellationToken));
+            if (useExistingMix) Assert.Equal(mixBytes, await File.ReadAllBytesAsync(mix, TestContext.Current.CancellationToken));
+            else Assert.Equal(waveBytes, await File.ReadAllBytesAsync(wave, TestContext.Current.CancellationToken));
+            var result = await LektorMediaProbe.ReadAsync(output, TestContext.Current.CancellationToken);
+            var subs = result.Tracks.Where(t => t.Type == "Subtitle").ToList();
+            Assert.Equal(3, subs.Count);
+            Assert.All(subs.Take(2), t => Assert.False(t.Default || t.Forced));
+            Assert.Equal("pol", subs[^1].Language);
+            Assert.Equal(LektorMkvMuxer.ForcedSubtitleTitle, subs[^1].Title);
+            Assert.True(subs[^1].Default && subs[^1].Forced);
+            var audio = result.Tracks.Where(t => t.Type == "Audio").ToList();
+            Assert.Equal(3, audio.Count);
+            Assert.Equal("pol", audio[0].Language);
+            Assert.True(audio[0].Default && !audio[0].Forced);
+            Assert.All(audio.Skip(1), t => Assert.False(t.Default || t.Forced));
+            Assert.Equal(1, result.Chapters);
+            Assert.Single(result.Tracks.Where(t => !t.IsMedia));
+            Assert.Equal(await DecodeVideo(video), await DecodeVideo(output));
+            foreach (var seek in new[] { "0.8", "2.0", "3.8" })
+                Assert.Equal(await DecodeVideo(video, seek), await DecodeVideo(output, seek));
+
+            var extracted = Path.Combine(folder, "extracted.srt");
+            await Run(["-v", "error", "-y", "-copyts", "-i", output, "-map", $"0:{subs[^1].Index}", "-c:s", "copy", extracted]);
+            var expected = new Subtitle(); var actual = new Subtitle();
+            var format = new Nikse.SubtitleEdit.Core.SubtitleFormats.SubRip();
+            format.LoadSubtitle(expected, (await File.ReadAllLinesAsync(srt, TestContext.Current.CancellationToken)).ToList(), srt);
+            format.LoadSubtitle(actual, (await File.ReadAllLinesAsync(extracted, TestContext.Current.CancellationToken)).ToList(), extracted);
+            Assert.Equal(expected.Paragraphs.Select(p => (p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds, p.Text)),
+                actual.Paragraphs.Select(p => (p.StartTime.TotalMilliseconds, p.EndTime.TotalMilliseconds, p.Text)));
+        }
+        finally { Directory.Delete(folder, true); }
+    }
+
+    [Fact]
+    public async Task MixOnlyIgnoresTheOptionalSubtitleFile()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "lektor-v42-mix-only-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var (video, wave) = await MakeFixture(folder);
+            var mix = Path.Combine(folder, "mix.ac3");
+            var output = await LektorExportService.ExportAsync(video, wave, mix, null, 2,
+                new LektorExportOptions { BitrateKbps = 224 }, TestContext.Current.CancellationToken,
+                forcedSubtitleFile: Path.Combine(folder, "missing.srt"));
+            Assert.Equal(mix, output);
+            var info = await LektorMediaProbe.ReadAsync(mix, TestContext.Current.CancellationToken);
+            Assert.Single(info.Tracks);
+            Assert.Equal("Audio", info.Tracks[0].Type);
+        }
+        finally { Directory.Delete(folder, true); }
     }
 
     [Theory]

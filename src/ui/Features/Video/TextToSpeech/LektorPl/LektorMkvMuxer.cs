@@ -1,3 +1,5 @@
+using Nikse.SubtitleEdit.Core.Common;
+using Nikse.SubtitleEdit.Core.SubtitleFormats;
 using Nikse.SubtitleEdit.Logic.Config;
 using Nikse.SubtitleEdit.Logic.Media;
 using System;
@@ -17,8 +19,28 @@ namespace Nikse.SubtitleEdit.Features.Video.TextToSpeech.LektorPl;
 internal static class LektorMkvMuxer
 {
     internal sealed record Track(int Id, string Type);
+    internal sealed record ForcedSubtitles(string FileName, string Charset, int TrackId = 0);
+    internal const string ForcedSubtitleTitle = "Polski - napisy wymuszone";
     internal sealed record Attachment(int Id, string Name, string Mime, long Size);
     private sealed record AttachmentFingerprint(string Name, string Mime, long Size, string Hash);
+
+    internal static async Task<ForcedSubtitles> ReadForcedSubtitlesAsync(string file, CancellationToken token)
+    {
+        if (!string.Equals(Path.GetExtension(file), ".srt", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Wymuszone napisy PL muszą być plikiem SRT.");
+        if (!File.Exists(file)) throw new FileNotFoundException("Nie znaleziono SRT wymuszonych napisów PL.", file);
+        var encoding = LanguageAutoDetect.GetEncodingFromFile(file);
+        var lines = (await File.ReadAllLinesAsync(file, encoding, token)).ToList();
+        var format = new SubRip();
+        if (!format.IsMine(lines, file))
+            throw new ArgumentException("Wybierz poprawny, niepusty plik SRT wymuszonych napisów PL.");
+        var subtitle = new Subtitle();
+        format.LoadSubtitle(subtitle, lines, file);
+        if (format.ErrorCount != 0 || subtitle.Paragraphs.Any(p => string.IsNullOrWhiteSpace(p.Text) ||
+            p.StartTime.TotalMilliseconds < 0 || p.EndTime.TotalMilliseconds <= p.StartTime.TotalMilliseconds))
+            throw new ArgumentException("SRT wymuszonych napisów PL zawiera nieprawidłowe bloki lub czasy. Popraw plik przed eksportem.");
+        return new(Path.GetFullPath(file), encoding.WebName);
+    }
 
     internal static string ResolveExecutable()
     {
@@ -129,10 +151,11 @@ internal static class LektorMkvMuxer
     }
 
     internal static List<string> Arguments(string video, string mix, string output,
-        IReadOnlyList<Track> source, int mixId)
+        IReadOnlyList<Track> source, int mixId, ForcedSubtitles? forcedSubtitles = null)
     {
         var order = source.Where(t => t.Type == "video").Select(t => $"0:{t.Id}")
-            .Concat(new[] { $"1:{mixId}" }).Concat(source.Where(t => t.Type != "video").Select(t => $"0:{t.Id}"));
+            .Concat(new[] { $"1:{mixId}" }).Concat(source.Where(t => t.Type != "video").Select(t => $"0:{t.Id}")).ToList();
+        if (forcedSubtitles != null) order.Add($"2:{forcedSubtitles.TrackId}");
         var args = new List<string> { "--output", output, "--track-order", string.Join(',', order) };
         foreach (var track in source.Where(t => t.Type is "audio" or "subtitles"))
             args.AddRange(["--default-track-flag", $"{track.Id}:0", "--forced-display-flag", $"{track.Id}:0"]);
@@ -142,11 +165,20 @@ internal static class LektorMkvMuxer
         args.AddRange(["--no-chapters", "--no-global-tags", "--no-track-tags", "--no-attachments",
             "--language", $"{mixId}:pol", "--track-name", $"{mixId}:Polski lektor PL",
             "--default-track-flag", $"{mixId}:1", "--forced-display-flag", $"{mixId}:0", mix]);
+        if (forcedSubtitles != null)
+        {
+            var id = forcedSubtitles.TrackId;
+            args.AddRange(["--no-chapters", "--no-global-tags", "--no-track-tags", "--no-attachments",
+                "--sub-charset", $"{id}:{forcedSubtitles.Charset}",
+                "--language", $"{id}:pol", "--track-name", $"{id}:{ForcedSubtitleTitle}",
+                "--track-enabled-flag", $"{id}:1", "--default-track-flag", $"{id}:1",
+                "--forced-display-flag", $"{id}:1", forcedSubtitles.FileName]);
+        }
         return args;
     }
 
     internal static async Task MuxAsync(string executable, string video, string mix, string output,
-        CancellationToken token)
+        CancellationToken token, ForcedSubtitles? forcedSubtitles = null)
     {
         // Identification JSON is language-independent. Locale names differ across
         // MKVToolNix versions/platforms, so do not force an interface translation.
@@ -154,7 +186,27 @@ internal static class LektorMkvMuxer
         var added = ParseTracks(await RunAsync(executable, ["-J", mix], token));
         if (added.Count != 1 || added[0].Type != "audio")
             throw new ArgumentException("Miks musi zawierać dokładnie jedną ścieżkę audio.");
-        await RunAsync(executable, Arguments(video, mix, output, source, added[0].Id), token, captureJson: false);
+        if (forcedSubtitles != null)
+        {
+            var subtitles = ParseTracks(await RunAsync(executable, ["-J", forcedSubtitles.FileName], token));
+            if (subtitles.Count != 1 || subtitles[0].Type != "subtitles")
+                throw new ArgumentException("SRT musi zawierać dokładnie jedną ścieżkę napisów.");
+            forcedSubtitles = forcedSubtitles with { TrackId = subtitles[0].Id };
+        }
+        await RunAsync(executable, Arguments(video, mix, output, source, added[0].Id, forcedSubtitles), token, captureJson: false);
+        if (forcedSubtitles != null)
+        {
+            using var document = JsonDocument.Parse(await RunAsync(executable, ["-J", output], token));
+            var track = document.RootElement.GetProperty("tracks").EnumerateArray().Last();
+            var properties = track.GetProperty("properties");
+            if (track.GetProperty("type").GetString() != "subtitles" ||
+                properties.GetProperty("codec_id").GetString() != "S_TEXT/UTF8" ||
+                properties.GetProperty("language").GetString() != "pol" ||
+                !properties.GetProperty("enabled_track").GetBoolean() ||
+                !properties.GetProperty("default_track").GetBoolean() ||
+                !properties.GetProperty("forced_track").GetBoolean())
+                throw new InvalidOperationException("Nieprawidłowy format, język lub flagi wymuszonych napisów PL.");
+        }
     }
 
     private static async Task<string> RunAsync(string executable, IEnumerable<string> args,

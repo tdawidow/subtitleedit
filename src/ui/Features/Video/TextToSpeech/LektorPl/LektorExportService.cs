@@ -48,17 +48,25 @@ internal static class LektorExportService
 
     internal static async Task<string> ExportAsync(string video, string wave, string mix, string? mkv,
         int streamIndex, LektorExportOptions options, CancellationToken token, Action<string>? progress = null,
-        bool useExistingMix = false)
+        bool useExistingMix = false, string? forcedSubtitleFile = null)
     {
         options.Validate();
         token.ThrowIfCancellationRequested();
         GuardOutput(mix, video, wave, useExistingMix);
+        LektorMkvMuxer.ForcedSubtitles? forcedSubtitles = null;
         if (mkv != null)
         {
             if (!mkv.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("Plik wynikowy musi mieć rozszerzenie MKV.");
             GuardOutput(mkv, video, wave, false);
             if (SamePath(mkv, mix)) throw new ArgumentException("Miks i MKV muszą mieć różne nazwy.");
+            if (!string.IsNullOrWhiteSpace(forcedSubtitleFile))
+            {
+                if (SamePath(forcedSubtitleFile, mix) || SamePath(forcedSubtitleFile, mkv))
+                    throw new ArgumentException("Plik wynikowy nie może zastąpić SRT wymuszonych napisów PL.");
+                progress?.Invoke("Sprawdzanie SRT wymuszonych napisów PL…");
+                forcedSubtitles = await LektorMkvMuxer.ReadForcedSubtitlesAsync(forcedSubtitleFile, token);
+            }
         }
         progress?.Invoke("Odczyt ścieżek źródłowych…");
         var source = await LektorMediaProbe.ReadAsync(video, token);
@@ -95,12 +103,12 @@ internal static class LektorExportService
         try
         {
             progress?.Invoke("Tworzenie MKV przez MKVToolNix…");
-            await LektorMkvMuxer.MuxAsync(muxer, video, mix, tempMkv, token);
+            await LektorMkvMuxer.MuxAsync(muxer, video, mix, tempMkv, token, forcedSubtitles);
             progress?.Invoke("Kontrola ścieżek, flag i długości…");
             var output = await LektorMediaProbe.ReadAsync(tempMkv, token);
             Se.WriteToolsLog("Lektor PL: kontrola MKV\nŹródło:\n" + DescribeTracks(source) +
                 "\nMiks:\n" + DescribeTracks(mixInfo) + "\nWynik:\n" + DescribeTracks(output));
-            ValidateTracks(source, mixInfo, output);
+            ValidateTracks(source, mixInfo, output, forcedSubtitles != null);
             await LektorMkvMuxer.VerifyAttachmentsAsync(muxer, video, tempMkv, token);
             var before = await LektorMediaProbe.AuditAsync(video, token);
             var after = await LektorMediaProbe.AuditAsync(tempMkv, token);
@@ -126,12 +134,14 @@ internal static class LektorExportService
         finally { DeleteTemporary(tempMkv); }
     }
 
-    internal static void ValidateTracks(LektorMediaProbe source, LektorMediaProbe mix, LektorMediaProbe output)
+    internal static void ValidateTracks(LektorMediaProbe source, LektorMediaProbe mix, LektorMediaProbe output,
+        bool hasForcedSubtitles = false)
     {
         // FFmpeg exposes cover art as Video (attached pic). It is NOT a film track;
         // Matroska attachments are validated separately by name, MIME, size and SHA-256.
         var expected = source.Tracks.Where(t => t.IsVideo).Concat(mix.Tracks.Where(t => t.IsMedia))
             .Concat(source.Tracks.Where(t => t.IsMedia && !t.IsVideo)).ToList();
+        if (hasForcedSubtitles) expected.Add(new(-1, "Subtitle", "subrip", "pol", true, true));
         var actual = output.Tracks.Where(t => t.IsMedia).ToList();
         if (expected.Count != actual.Count || source.Chapters != output.Chapters)
             throw new InvalidOperationException($"Nie zachowano kompletu ścieżek lub rozdziałów. Ścieżki: {expected.Count} → {actual.Count}; rozdziały: {source.Chapters} → {output.Chapters}.");
@@ -142,9 +152,15 @@ internal static class LektorExportService
                     $"Oczekiwano: {expected[i].Type} | {expected[i].Info}\nOtrzymano: {actual[i].Type} | {actual[i].Info}");
         }
         var audio = output.Tracks.Where(t => t.Type == "Audio").ToList();
+        var subtitles = output.Tracks.Where(t => t.Type == "Subtitle").ToList();
+        var originalSubtitleCount = source.Tracks.Count(t => t.Type == "Subtitle");
         if (audio.Count == 0 || audio[0].Language != "pol" || !audio[0].Default || audio[0].Forced ||
-            audio.Skip(1).Any(t => t.Default || t.Forced) || output.Tracks.Any(t => t.Type == "Subtitle" && (t.Default || t.Forced)))
+            audio.Skip(1).Any(t => t.Default || t.Forced) || subtitles.Take(originalSubtitleCount).Any(t => t.Default || t.Forced))
             throw new InvalidOperationException("Nieprawidłowe flagi domyślnej ścieżki PL lub napisów.");
+        if (hasForcedSubtitles && (subtitles.Count != originalSubtitleCount + 1 ||
+            subtitles[^1].Language != "pol" || !subtitles[^1].Default || !subtitles[^1].Forced ||
+            subtitles[^1].Title != LektorMkvMuxer.ForcedSubtitleTitle))
+            throw new InvalidOperationException("Nieprawidłowy język, nazwa lub flagi wymuszonych napisów PL.");
     }
 
     private static string CodecName(LektorTrack track) => track.Info.Split([',', ' '], StringSplitOptions.RemoveEmptyEntries)[0];

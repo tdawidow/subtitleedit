@@ -1,4 +1,26 @@
-# Lektor PL — wersja 4.1.1
+# Lektor PL — wersja 4.2
+
+## Opcjonalne wymuszone napisy PL w 4.2
+
+W oknie eksportu pole **Wymuszone napisy PL (SRT)** pozwala wskazać dodatkowy
+plik SRT przez **Wybierz…**. Pole jest początkowo puste i nie jest zapamiętywane
+między otwarciami okna. **Wyczyść** wyłącza dodawanie tej ścieżki.
+
+Wskazany SRT jest dodawany do MKV jako osobna ścieżka `Polski - napisy wymuszone`,
+z językiem `pol`, Enabled=1, Default=1 i Forced=1. Zachowujemy tekst i czasy;
+SRT nie jest przekazywany do generatora TTS ani wtapiany w obraz. Wybór działa
+zarówno przy **Miks + MKV**, jak i **MKV z istniejącego miksu…**.
+**Tylko miks** ignoruje pole SRT. Bez wybranego SRT eksport działa jak w 4.1.1.
+
+Przed miksowaniem sprawdzamy istnienie i poprawność SRT. Do MKVToolNix
+przekazujemy wykryte kodowanie pliku, również dla UTF-8 bez BOM z polskimi
+znakami. Kontrola wyniku uwzględnia dodatkową ścieżkę i jej flagi.
+Wszystkie oryginalne ścieżki, rozdziały i załączniki nadal pozostają zachowane;
+oryginalne napisy mają Default=0 i Forced=0. Ostateczny automatyczny wybór
+napisów zależy także od ustawień i obsługi flag przez odtwarzacz.
+
+Zakres 4.2 obejmuje wyłącznie opcjonalny SRT. Synteza i synchronizacja TTS,
+miksowanie, dynamiczne ściszanie oraz kodowanie audio pozostają bez zmian.
 
 ## Poprawka kontroli MKV w 4.1.1
 
@@ -51,8 +73,9 @@ syntezę Azure, korektę synchronizacji i szybkie scalanie WAV z wersji 3.
    używane automatycznie.
 3. Włącz **Add audio to video file** i wygeneruj lektora normalnie. Po korekcie
    klipów program scala lektora i pyta o miejsce zapisu zsynchronizowanego WAV.
-4. Po zapisaniu WAV otwiera się okno **Lektor PL — wersja 4.1.1**. Wybierz konkretną
+4. Po zapisaniu WAV otwiera się okno **Lektor PL — wersja 4.2**. Wybierz konkretną
    ścieżkę źródłową, kodek, bitrate, poziomy i tryb miksowania.
+   Opcjonalnie wskaż **Wymuszone napisy PL (SRT)**.
 5. **Miks + MKV** zapisuje niezależny miks audio, następnie tworzy i sprawdza MKV.
 
 Przycisk **Lektor PL: istniejący WAV…** uruchamia eksport bez generowania TTS.
@@ -81,7 +104,7 @@ WAV zapisany w poprzednim etapie pozostaje w wybranym wcześniej miejscu.
 MKV zachowuje wszystkie rozpoznane strumienie źródłowe, metadane, rozdziały
 i załączniki. Obraz i oryginalne ścieżki są kopiowane bez rekompresji. Nowy miks
 jest pierwszą ścieżką audio, z językiem `pol`, tytułem `Polski lektor PL`,
-Default=1, Forced=0. Pozostałe audio oraz napisy mają Default=0 i Forced=0;
+Default=1, Forced=0. Pozostałe audio oraz oryginalne napisy mają Default=0 i Forced=0;
 inne właściwości ścieżek pozostają zachowane. Ścieżki nadal można wybierać ręcznie.
 Odtwarzacz może kierować się własnymi preferencjami językowymi.
 
@@ -117,6 +140,10 @@ nie są stosowane. Aby używać dawnej procedury, wyłącz **Moduł Lektor PL v4
 z dwiema ścieżkami audio, dwoma napisami, rozdziałem i załącznikiem. Obejmują
 wybór drugiej ścieżki, odzyskanie głośności w ciszy, niezmienność wejść,
 ponowny mux bez WAV, anulowanie i błąd nieobsługiwanego strumienia.
+Dodatkowe testy 4.2 obejmują SRT w obu trybach tworzenia MKV, polskie znaki
+w UTF-8 bez BOM, zachowanie treści i czasów po ekstrakcji, flagi ścieżek,
+dekodowanie i przewijanie H.264, niepoprawny/brakujący SRT, ochronę plików
+wejściowych oraz eksport samego miksu z nieważną ścieżką SRT.
 Wymagają działających FFmpeg i mkvmerge; `FFMPEG_TEST_PATH` oraz
 `MKVMERGE_TEST_PATH` mogą wskazywać ich pełne ścieżki.
 Workflow `Lektor PL v4 - Windows x64` wykonuje testy i tworzy paczkę portable ZIP.
