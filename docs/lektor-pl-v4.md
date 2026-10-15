@@ -8,7 +8,8 @@ między otwarciami okna. **Wyczyść** wyłącza dodawanie tej ścieżki.
 
 Wskazany SRT jest dodawany do MKV jako osobna ścieżka `Polski - napisy wymuszone`,
 z językiem `pol`, Enabled=1, Default=1 i Forced=1. Zachowujemy tekst i czasy;
-SRT nie jest przekazywany do generatora TTS ani wtapiany w obraz. Wybór działa
+źródłowy SRT pozostaje niezmieniony. Napisy nie są przekazywane do generatora
+TTS ani wtapiane w obraz. Wybór działa
 zarówno przy **Miks + MKV**, jak i **MKV z istniejącego miksu…**.
 **Tylko miks** ignoruje pole SRT. Bez wybranego SRT eksport działa jak w 4.1.1.
 
