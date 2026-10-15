@@ -76,6 +76,20 @@ public class TtsUsageTests : IDisposable
     }
 
     [Fact]
+    public void DisablingAndReenablingPreservesSpentBalanceAndReadDoesNotCreateProfiles()
+    {
+        Store().Get("unfinished-credential");
+        Assert.False(File.Exists(Ledger));
+        Store().Configure("a", true, 1, 100, 60);
+        var request = Store().Reserve("a", 5);
+        Store().Resolve("a", request, true);
+        Store().Configure("a", false, 1, 100, null);
+        Store().Configure("a", true, 1, 100, null);
+        Assert.Equal(55, Store().Get("a").AvailableCharacters);
+        Assert.DoesNotContain("unfinished-credential", File.ReadAllText(Ledger));
+    }
+
+    [Fact]
     public async Task MultipleInstancesCannotOverReserve()
     {
         Store().Configure("a", true, 1, 10, null);

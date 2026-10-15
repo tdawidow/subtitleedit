@@ -12,6 +12,7 @@ namespace Nikse.SubtitleEdit.Features.Video.TextToSpeech.Usage;
 public sealed class TtsUsageProfile
 {
     public bool Enabled { get; set; }
+    public bool AllowanceInitialized { get; set; }
     public int ResetDay { get; set; } = 1;
     public long MonthlyCharacters { get; set; } = 500000;
     public long RemainingCharacters { get; set; } = 500000;
@@ -77,6 +78,7 @@ public sealed class TtsUsageStore
         Access(account, p =>
         {
             var wasEnabled = p.Enabled;
+            var initialized = p.AllowanceInitialized || wasEnabled;
             var oldDay = p.ResetDay;
             p.Enabled = enabled;
             p.ResetDay = resetDay;
@@ -89,8 +91,9 @@ public sealed class TtsUsageStore
                 p.Reservations.Clear();
                 p.ProviderQuotaExhausted = false;
             }
-            else if (!wasEnabled && enabled)
+            else if (!initialized && enabled)
                 p.RemainingCharacters = monthly;
+            p.AllowanceInitialized = initialized || enabled || available.HasValue;
             if (oldDay != resetDay)
             {
                 p.CycleStart = CycleStart(_today(), resetDay);
@@ -147,7 +150,8 @@ public sealed class TtsUsageStore
             {
                 profile = new TtsUsageProfile { CycleStart = CycleStart(_today(), 1) };
                 doc.Profiles.Add(account, profile);
-                dirty = true;
+                // Looking up a typed credential is read-only. Persist a profile only after
+                // configuration or an actual state change, never for every key prefix.
             }
             if (profile.ResetDay is < 1 or > 31 || profile.Reservations == null || profile.MonthlyCharacters < 0 || profile.Reservations.Any(r => r.Characters < 0))
                 throw new InvalidDataException("Nieprawidłowe ustawienia licznika TTS.");
