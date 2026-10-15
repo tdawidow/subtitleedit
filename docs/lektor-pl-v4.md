@@ -1,4 +1,15 @@
-# Lektor PL — wersja 4.2
+# Lektor PL — wersja 4.2.1
+
+## Bezpośredni dostęp z paska narzędzi w 4.2.1
+
+Ikona łączenia na głównym pasku narzędzi, w grupie otwierania i zapisu plików,
+otwiera okno **Lektor PL — miks audio i MKV**. Jest dostępna także bez
+wczytanych napisów i bez włączania generatora TTS.
+
+Jeżeli w głównym oknie jest otwarte wideo, jego ścieżka jest podpowiadana.
+W oknie Lektor PL można wskazać inne wideo, WAV lektora, gotowy miks oraz
+opcjonalny SRT z wymuszonymi napisami PL. Sposób miksowania i tworzenia MKV
+pozostaje taki sam jak w 4.2.
 
 ## Opcjonalne wymuszone napisy PL w 4.2
 
@@ -74,7 +85,7 @@ syntezę Azure, korektę synchronizacji i szybkie scalanie WAV z wersji 3.
    używane automatycznie.
 3. Włącz **Add audio to video file** i wygeneruj lektora normalnie. Po korekcie
    klipów program scala lektora i pyta o miejsce zapisu zsynchronizowanego WAV.
-4. Po zapisaniu WAV otwiera się okno **Lektor PL — wersja 4.2**. Wybierz konkretną
+4. Po zapisaniu WAV otwiera się okno **Lektor PL — wersja 4.2.1**. Wybierz konkretną
    ścieżkę źródłową, kodek, bitrate, poziomy i tryb miksowania.
    Opcjonalnie wskaż **Wymuszone napisy PL (SRT)**.
 5. **Miks + MKV** zapisuje niezależny miks audio, następnie tworzy i sprawdza MKV.

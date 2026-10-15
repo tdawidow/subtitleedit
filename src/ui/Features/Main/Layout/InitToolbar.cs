@@ -87,6 +87,23 @@ public static class InitToolbar
             isLastSeparator = false;
         }
 
+        stackPanelLeft.Children.Add(new Button
+        {
+            Name = "LektorExportToolbarButton",
+            Content = new Optris.Icons.Avalonia.Icon
+            {
+                Value = IconNames.SetMerge,
+                FontSize = 28,
+                Width = 32,
+                Height = 32,
+            },
+            Command = vm.ShowLektorExportCommand,
+            Background = Brushes.Transparent,
+            [AutomationProperties.NameProperty] = "Lektor PL — miks audio i MKV",
+            [ToolTip.TipProperty] = "Lektor PL — miksowanie audio / tworzenie MKV (bez wczytywania napisów)",
+        });
+        isLastSeparator = false;
+
         if (appearance.ToolbarShowSave)
         {
             stackPanelLeft.Children.Add(new Button
