@@ -390,7 +390,7 @@ public class LektorExportTests
             Assert.True(audio[0].Default && !audio[0].Forced);
             Assert.All(audio.Skip(1), t => Assert.False(t.Default || t.Forced));
             Assert.Equal(1, result.Chapters);
-            Assert.Single(result.Tracks.Where(t => !t.IsMedia));
+            Assert.Single(result.Tracks, t => !t.IsMedia);
             Assert.Equal(await DecodeVideo(video), await DecodeVideo(output));
             foreach (var seek in new[] { "0.8", "2.0", "3.8" })
                 Assert.Equal(await DecodeVideo(video, seek), await DecodeVideo(output, seek));
