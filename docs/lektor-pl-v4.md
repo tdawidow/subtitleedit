@@ -1,4 +1,27 @@
-# Lektor PL — wersja 4.2.1
+# Lektor PL — wersja 4.2.2
+
+## Widoczne pliki i kolejne eksporty w 4.2.2
+
+Pod **WAV lektora PL** znajduje się edytowalne pole **Miks PL**. Można wkleić
+ścieżkę gotowego audio (także skopiowaną z Windows w cudzysłowie) lub użyć
+**Wybierz…**. Pole **Wynikowy MKV** pokazuje pełną ścieżkę pliku wynikowego,
+łącznie z katalogiem i nazwą. Można ją wkleić lub wybrać przed uruchomieniem.
+
+**MKV z istniejącego miksu** korzysta z wideo, miksu, opcjonalnego SRT i wyniku
+wskazanych w oknie. Po kliknięciu nie otwiera okien wyboru plików. Nie wymaga
+WAV i zachowuje oryginalny kodek gotowego miksu. Brakujące pliki lub katalog
+oraz próba zapisania MKV na pliku wejściowym zatrzymują operację. Istniejący
+wynik można zastąpić po potwierdzeniu z widoczną pełną ścieżką.
+
+**Miks + MKV** korzysta ze wskazanego wyniku; jeżeli pole jest puste, proponuje
+wybór miejsca zapisu jak wcześniej. Nowo zapisany miks pojawia się w polu
+**Miks PL**, także po użyciu **Tylko miks**.
+
+Po udanym eksporcie i zamknięciu komunikatu potwierdzającego okno pozostaje
+otwarte, pola i przyciski są ponownie aktywne. Można sprawdzić wskazany komplet
+plików, zmienić je i wykonać kolejny eksport. Ustawienia plików pozostają
+widoczne do zamknięcia okna. Wersja 4.2.2 nie zmienia silnika miksowania,
+muksowania ani obsługi wymuszonych napisów.
 
 ## Bezpośredni dostęp z paska narzędzi w 4.2.1
 
@@ -21,7 +44,7 @@ Wskazany SRT jest dodawany do MKV jako osobna ścieżka `Polski - napisy wymuszo
 z językiem `pol`, Enabled=1, Default=1 i Forced=1. Zachowujemy tekst i czasy;
 źródłowy SRT pozostaje niezmieniony. Napisy nie są przekazywane do generatora
 TTS ani wtapiane w obraz. Wybór działa
-zarówno przy **Miks + MKV**, jak i **MKV z istniejącego miksu…**.
+zarówno przy **Miks + MKV**, jak i **MKV z istniejącego miksu**.
 **Tylko miks** ignoruje pole SRT. Bez wybranego SRT eksport działa jak w 4.1.1.
 
 Przed miksowaniem sprawdzamy istnienie i poprawność SRT. Do MKVToolNix
@@ -85,7 +108,7 @@ syntezę Azure, korektę synchronizacji i szybkie scalanie WAV z wersji 3.
    używane automatycznie.
 3. Włącz **Add audio to video file** i wygeneruj lektora normalnie. Po korekcie
    klipów program scala lektora i pyta o miejsce zapisu zsynchronizowanego WAV.
-4. Po zapisaniu WAV otwiera się okno **Lektor PL — wersja 4.2.1**. Wybierz konkretną
+4. Po zapisaniu WAV otwiera się okno **Lektor PL — wersja 4.2.2**. Wybierz konkretną
    ścieżkę źródłową, kodek, bitrate, poziomy i tryb miksowania.
    Opcjonalnie wskaż **Wymuszone napisy PL (SRT)**.
 5. **Miks + MKV** zapisuje niezależny miks audio, następnie tworzy i sprawdza MKV.
@@ -110,7 +133,7 @@ Dla wyniku `Film_PL.mkv` miks jest zapisywany np. jako `Film_PL_MIX_PL.ac3`.
 WAV zapisany w poprzednim etapie pozostaje w wybranym wcześniej miejscu.
 
 - **Tylko miks** zapisuje samo audio.
-- **MKV z istniejącego miksu…** pozwala wskazać gotowy miks, zachowuje jego kodek
+- **MKV z istniejącego miksu** pozwala wskazać gotowy miks, zachowuje jego kodek
   i nie wymaga obecności WAV ani ponownego kodowania miksu.
 
 MKV zachowuje wszystkie rozpoznane strumienie źródłowe, metadane, rozdziały

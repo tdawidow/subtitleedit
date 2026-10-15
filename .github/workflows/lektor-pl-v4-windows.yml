@@ -58,13 +58,13 @@ jobs:
           # Ship the working MKVToolNix installation (including DLLs and license files).
           Copy-Item "C:\Program Files\MKVToolNix" "./publish/lektor-pl-v4-win-x64/MKVToolNix" -Recurse
           Get-ChildItem "./publish/lektor-pl-v4-win-x64" -Filter "*.pdb" -Recurse -File | Remove-Item -Force
-          Compress-Archive -Path "./publish/lektor-pl-v4-win-x64/*" -DestinationPath "./SubtitleEdit-LektorPL-v4.2.1-Windows-x64.zip"
+          Compress-Archive -Path "./publish/lektor-pl-v4-win-x64/*" -DestinationPath "./SubtitleEdit-LektorPL-v4.2.2-Windows-x64.zip"
 
       - name: Upload portable build
         uses: actions/upload-artifact@v5
         with:
-          name: SubtitleEdit-LektorPL-v4.2.1-Windows-x64
-          path: ./SubtitleEdit-LektorPL-v4.2.1-Windows-x64.zip
+          name: SubtitleEdit-LektorPL-v4.2.2-Windows-x64
+          path: ./SubtitleEdit-LektorPL-v4.2.2-Windows-x64.zip
           if-no-files-found: error
 
       - name: Upload test results

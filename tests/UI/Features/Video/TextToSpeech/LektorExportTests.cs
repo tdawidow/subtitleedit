@@ -9,6 +9,8 @@ using Avalonia.Headless.XUnit;
 using Avalonia.LogicalTree;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Nikse.SubtitleEdit.Features.Shared;
+using System.Reflection;
 
 namespace UITests.Features.Video.TextToSpeech;
 
@@ -26,7 +28,9 @@ public class LektorExportTests
             var labels = window.GetLogicalDescendants().OfType<Button>().Select(b => b.Content as string).ToList();
             Assert.Contains("Miks + MKV", labels);
             Assert.Contains("Tylko miks", labels);
-            Assert.Contains("MKV z istniejącego miksu…", labels);
+            Assert.Contains("MKV z istniejącego miksu", labels);
+            Assert.False(Field(window, "LektorMixFile").IsReadOnly);
+            Assert.False(Field(window, "LektorMkvOutputFile").IsReadOnly);
             var subtitleFile = window.GetLogicalDescendants().OfType<TextBox>().Single(t => t.Name == "ForcedSubtitleFile");
             Assert.True(string.IsNullOrEmpty(subtitleFile.Text));
             subtitleFile.Text = "odcinek_WYMUSZONE_PL.srt";
@@ -51,6 +55,136 @@ public class LektorExportTests
         var mkvmerge = Environment.GetEnvironmentVariable("MKVMERGE_TEST_PATH");
         if (!string.IsNullOrEmpty(mkvmerge))
             Nikse.SubtitleEdit.Logic.Config.Se.Settings.Video.TextToSpeech.LektorMkvmergePath = mkvmerge;
+    }
+
+    [AvaloniaFact]
+    public async Task ExistingMixUsesVisiblePathsAndKeepsWindowReadyForAnotherFile()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "lektor-v422-okno ąć-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        LektorExportWindow? window = null;
+        try
+        {
+            var (video, wave) = await MakeFixture(folder);
+            var ac3 = Path.Combine(folder, "miks jeden.ac3");
+            var flac = Path.Combine(folder, "miks dwa.flac");
+            await Run(["-v", "error", "-y", "-i", wave, "-ar", "48000", "-ac", "2", "-c:a", "ac3", "-b:a", "224k", ac3]);
+            await Run(["-v", "error", "-y", "-i", wave, "-ar", "48000", "-ac", "2", "-c:a", "flac", flac]);
+            File.Delete(wave); // A finished mix needs neither a WAV nor a new synthesis.
+            var picker = DispatchProxy.Create<IFileHelper, RejectFileDialogs>();
+            window = new LektorExportWindow(picker, video, string.Empty);
+            window.Show();
+            await WaitForExportInputs(window);
+            var original = await File.ReadAllBytesAsync(video, TestContext.Current.CancellationToken);
+            Field(window, "ForcedSubtitleFile").Text = Path.Combine(folder, "sub.srt");
+            foreach (var (mix, codec, name) in new[] { (ac3, "ac3", "pierwszy"), (flac, "flac", "drugi") })
+            {
+                var output = Path.Combine(folder, name + " PL.mkv");
+                var mixBytes = await File.ReadAllBytesAsync(mix, TestContext.Current.CancellationToken);
+                Field(window, "LektorMixFile").Text = "\"" + mix + "\"";
+                Field(window, "LektorMkvOutputFile").Text = "\"" + output + "\"";
+                var messages = await RunExportAndDismissMessages(window);
+                Assert.Equal(new[] { "Lektor PL" }, messages);
+                Assert.True(File.Exists(output));
+                var probe = await LektorMediaProbe.ReadAsync(output, TestContext.Current.CancellationToken);
+                Assert.StartsWith(codec, probe.Tracks.First(t => t.Type == "Audio").Info);
+                var forced = probe.Tracks.Last(t => t.Type == "Subtitle");
+                Assert.Equal("pol", forced.Language);
+                Assert.True(forced.Default && forced.Forced);
+                Assert.Equal(mixBytes, await File.ReadAllBytesAsync(mix, TestContext.Current.CancellationToken));
+                Assert.Equal(original, await File.ReadAllBytesAsync(video, TestContext.Current.CancellationToken));
+                Assert.True(window.IsVisible);
+                Assert.True(Field(window, "LektorMixFile").IsEffectivelyEnabled);
+                Assert.True(Field(window, "LektorMkvOutputFile").IsEffectivelyEnabled);
+                Assert.Equal(mix, Field(window, "LektorMixFile").Text);
+                Assert.Equal(output, Field(window, "LektorMkvOutputFile").Text);
+            }
+            Assert.Equal(0, ((RejectFileDialogs)(object)picker).Calls);
+        }
+        finally
+        {
+            window?.Close();
+            Directory.Delete(folder, true);
+        }
+    }
+
+    [AvaloniaFact]
+    public async Task IncompleteOrCollidingVisiblePathsDoNotOpenPickersOrReplaceTheSource()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "lektor-v422-path-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(folder);
+        LektorExportWindow? window = null;
+        try
+        {
+            var (video, wave) = await MakeFixture(folder);
+            var picker = DispatchProxy.Create<IFileHelper, RejectFileDialogs>();
+            window = new LektorExportWindow(picker, video, string.Empty);
+            window.Show();
+            await WaitForExportInputs(window);
+            var original = await File.ReadAllBytesAsync(video, TestContext.Current.CancellationToken);
+            var output = Path.Combine(folder, "output.mkv");
+            foreach (var (mix, target) in new[] { ("", output), (wave, ""), (wave, video) })
+            {
+                Field(window, "LektorMixFile").Text = mix;
+                Field(window, "LektorMkvOutputFile").Text = target;
+                var messages = await RunExportAndDismissMessages(window);
+                Assert.Equal(new[] { "Błąd eksportu Lektor PL" }, messages);
+                Assert.True(window.IsVisible);
+                Assert.True(Field(window, "LektorMixFile").IsEffectivelyEnabled);
+                Assert.False(File.Exists(output));
+                Assert.Equal(original, await File.ReadAllBytesAsync(video, TestContext.Current.CancellationToken));
+            }
+            Assert.Equal(0, ((RejectFileDialogs)(object)picker).Calls);
+        }
+        finally
+        {
+            window?.Close();
+            Directory.Delete(folder, true);
+        }
+    }
+
+    private static TextBox Field(Window window, string name) =>
+        window.GetLogicalDescendants().OfType<TextBox>().Single(t => t.Name == name);
+
+    private static async Task WaitForExportInputs(Window window)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+        while (!Field(window, "LektorMixFile").IsEffectivelyEnabled)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "Source probing did not finish.");
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+        }
+    }
+
+    private static async Task<List<string>> RunExportAndDismissMessages(LektorExportWindow window)
+    {
+        var titles = new List<string>();
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+        timer.Tick += (_, _) =>
+        {
+            foreach (var dialog in window.OwnedWindows.OfType<MessageBox>().ToArray())
+            {
+                titles.Add(dialog.Title ?? string.Empty);
+                dialog.Close(MessageBoxResult.OK);
+            }
+        };
+        timer.Start();
+        try
+        {
+            await window.ExportAsync(true, true).WaitAsync(TimeSpan.FromSeconds(45), TestContext.Current.CancellationToken);
+            return titles;
+        }
+        finally { timer.Stop(); }
+    }
+
+    public class RejectFileDialogs : DispatchProxy
+    {
+        public int Calls { get; private set; }
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            Calls++;
+            throw new InvalidOperationException("The existing-mix action must use the visible inputs, not a file picker: " + targetMethod?.Name);
+        }
     }
 
     [Fact]

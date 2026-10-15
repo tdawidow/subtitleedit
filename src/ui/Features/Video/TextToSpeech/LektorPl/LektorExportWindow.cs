@@ -20,6 +20,14 @@ public sealed class LektorExportWindow : Window
     private readonly IFileHelper _files;
     private readonly TextBox _video = new() { IsReadOnly = true };
     private readonly TextBox _wave = new() { IsReadOnly = true };
+    private readonly TextBox _mix = new()
+    {
+        Name = "LektorMixFile", PlaceholderText = "Wklej ścieżkę lub wybierz gotowy miks audio, np. AC3"
+    };
+    private readonly TextBox _outputMkv = new()
+    {
+        Name = "LektorMkvOutputFile", PlaceholderText = "Wskaż nazwę MKV i katalog docelowy przed uruchomieniem"
+    };
     private readonly TextBox _mkvmerge = new() { IsReadOnly = true };
     private readonly TextBox _forcedSubtitles = new()
     {
@@ -48,8 +56,8 @@ public sealed class LektorExportWindow : Window
     {
         _files = files;
         UiUtil.InitializeWindow(this, GetType().Name);
-        Title = "Lektor PL — wersja 4.2.1";
-        Width = 820; Height = 730; MinWidth = 600; MinHeight = 500;
+        Title = "Lektor PL — wersja 4.2.2";
+        Width = 900; Height = 820; MinWidth = 600; MinHeight = 500;
         _video.Text = video; _wave.Text = wave;
         try { _mkvmerge.Text = LektorMkvMuxer.ResolveExecutable(); }
         catch (FileNotFoundException) { _mkvmerge.PlaceholderText = "Wybierz mkvmerge z MKVToolNix (tylko dla MKV)"; }
@@ -82,6 +90,11 @@ public sealed class LektorExportWindow : Window
             var file = await _files.PickOpenFile(this, "Wybierz zsynchronizowany WAV", "WAV", "*.wav");
             if (!string.IsNullOrEmpty(file)) _wave.Text = file;
         }));
+        _inputs.Children.Add(FileRow("Miks PL", _mix, async () =>
+        {
+            var file = await _files.PickOpenFile(this, "Wybierz gotowy miks PL", "Audio", "*");
+            if (!string.IsNullOrEmpty(file)) _mix.Text = file;
+        }));
         _inputs.Children.Add(FileRow("MKVToolNix / mkvmerge", _mkvmerge, async () =>
         {
             var file = await _files.PickOpenFile(this, "Wybierz mkvmerge z MKVToolNix", "mkvmerge", OperatingSystem.IsWindows() ? "mkvmerge.exe" : "mkvmerge");
@@ -97,6 +110,11 @@ public sealed class LektorExportWindow : Window
             var file = await _files.PickOpenFile(this, "Wybierz wymuszone napisy PL", "SubRip (SRT)", "*.srt");
             if (!string.IsNullOrEmpty(file)) _forcedSubtitles.Text = file;
         }, clearable: true));
+        _inputs.Children.Add(FileRow("Wynikowy MKV", _outputMkv, async () =>
+        {
+            var file = await _files.PickSaveFile(this, ".mkv", SuggestedMkvName(), "Wskaż wynikowy MKV i katalog docelowy");
+            if (!string.IsNullOrEmpty(file)) _outputMkv.Text = file;
+        }));
         AddRow("Audio do miksowania", _track);
         AddRow("Tryb miksowania", _mode);
         AddRow("Kodek wynikowy", _codec);
@@ -107,9 +125,9 @@ public sealed class LektorExportWindow : Window
         AddRow("Siła ściszania (ratio)", _ratio);
         AddRow("Czas ściszania (ms)", _attack);
         AddRow("Czas przywracania (ms)", _release);
-        _actions.Children.Add(Action("Miks + MKV", () => Export(true, false)));
-        _actions.Children.Add(Action("Tylko miks", () => Export(false, false)));
-        _actions.Children.Add(Action("MKV z istniejącego miksu…", () => Export(true, true)));
+        _actions.Children.Add(Action("Miks + MKV", () => ExportAsync(true, false)));
+        _actions.Children.Add(Action("Tylko miks", () => ExportAsync(false, false)));
+        _actions.Children.Add(Action("MKV z istniejącego miksu", () => ExportAsync(true, true)));
         _cancel.Click += (_, _) => { if (_busy) _run?.Cancel(); else Close(); };
         var bottom = new StackPanel { Spacing = 10 };
         bottom.Children.Add(_status); bottom.Children.Add(_progress); bottom.Children.Add(_actions); bottom.Children.Add(_cancel);
@@ -198,7 +216,11 @@ public sealed class LektorExportWindow : Window
         AttackMs = (double)(_attack.Value ?? 80), ReleaseMs = (double)(_release.Value ?? 500)
     };
 
-    private async Task Export(bool makeMkv, bool existing)
+    private string SuggestedMkvName() => Path.GetFileNameWithoutExtension(_video.Text ?? string.Empty) + "_PL.mkv";
+
+    private static string EnteredPath(string? text) => (text ?? string.Empty).Trim().Trim('"');
+
+    internal async Task ExportAsync(bool makeMkv, bool existing)
     {
         if (_busy) return;
         // Set busy before file pickers: a double click must not start two exports.
@@ -215,15 +237,34 @@ public sealed class LektorExportWindow : Window
             string mix;
             if (existing)
             {
-                mix = await _files.PickOpenFile(this, "Wybierz gotowy miks PL", "Audio", "*");
-                if (string.IsNullOrEmpty(mix)) return;
+                mix = EnteredPath(_mix.Text);
+                if (!File.Exists(mix)) throw new ArgumentException("Wskaż istniejący plik audio w polu Miks PL.");
+                mix = Path.GetFullPath(mix);
+                _mix.Text = mix;
             }
             else mix = string.Empty;
             string? mkv = null;
             if (makeMkv)
             {
-                mkv = await _files.PickSaveFile(this, ".mkv", Path.GetFileNameWithoutExtension(video) + "_PL.mkv", "Zapisz MKV z lektorem PL");
-                if (string.IsNullOrEmpty(mkv)) return;
+                mkv = EnteredPath(_outputMkv.Text);
+                if (string.IsNullOrEmpty(mkv))
+                {
+                    if (existing) throw new ArgumentException("Wskaż plik i katalog docelowy w polu Wynikowy MKV przed uruchomieniem.");
+                    mkv = await _files.PickSaveFile(this, ".mkv", SuggestedMkvName(), "Zapisz MKV z lektorem PL");
+                    if (string.IsNullOrEmpty(mkv)) return;
+                }
+                mkv = Path.GetFullPath(mkv);
+                if (!mkv.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase))
+                    throw new ArgumentException("Plik wynikowy musi mieć rozszerzenie MKV.");
+                if (!Directory.Exists(Path.GetDirectoryName(mkv)))
+                    throw new ArgumentException("Katalog wynikowego MKV nie istnieje. Wskaż istniejący katalog.");
+                var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+                if (new[] { video, wave, existing ? mix : string.Empty, _forcedSubtitles.Text ?? string.Empty }
+                    .Where(p => !string.IsNullOrWhiteSpace(p)).Any(p => comparer.Equals(mkv, Path.GetFullPath(EnteredPath(p)))))
+                    throw new ArgumentException("Wynikowy MKV nie może zastąpić żadnego pliku wejściowego.");
+                _outputMkv.Text = mkv;
+                if (File.Exists(mkv) && await MessageBox.Show(this, "MKV już istnieje",
+                    "Zastąpić wynikowy MKV?\n" + mkv, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != MessageBoxResult.Yes) return;
                 if (!existing)
                 {
                     mix = Path.Combine(Path.GetDirectoryName(mkv)!, Path.GetFileNameWithoutExtension(mkv) + "_MIX_PL" + options.Extension);
@@ -243,9 +284,9 @@ public sealed class LektorExportWindow : Window
                 text => Dispatcher.UIThread.Post(() => _status.Text = text), existing,
                 forcedSubtitleFile: makeMkv ? _forcedSubtitles.Text : null);
             _status.Text = "Zakończono i sprawdzono: " + output;
+            _mix.Text = mix;
             await MessageBox.Show(this, "Lektor PL", "Plik zapisany i sprawdzony:\n" + output + "\n\nMiks audio:\n" + mix,
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
-            if (makeMkv) { _busy = false; Close(output); }
         }
         catch (OperationCanceledException) { _status.Text = "Anulowano eksport. Zapisany WAV i ukończony miks pozostają dostępne."; }
         catch (Exception ex)
