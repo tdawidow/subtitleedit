@@ -1,4 +1,75 @@
-# Lektor PL — wersja 4.2.2
+# Lektor PL — wersja 4.2.3
+
+
+## Kontrola znaków TTS w 4.2.3
+
+1. W oknie tworzenia lektora, bezpośrednio na prawo od wyboru silnika, znajduje się
+   przycisk ustawień **Limit i licznik znaków TTS**. Dotychczasowe ustawienia silnika
+   pozostają osobnym przyciskiem.
+2. Włącz kontrolę lokalnego limitu. Ustaw dzień resetu (domyślnie 1), miesięczną
+   liczbę znaków i opcjonalnie liczbę dostępną do najbliższego resetu. Wartość `0`
+   jest prawidłowym saldem; puste pole zachowuje saldo. Przy pierwszym włączeniu
+   bez tego pola przyjmowany jest pełny wpisany limit miesięczny.
+3. Pod wyborem silnika widać znaki pozostałe do wysłania, dostępne saldo i wynik
+   przewidywany po generowaniu. Znaczniki czasu, numery bloków i usunięte znaczniki
+   formatowania nie są wysyłane ani liczone. Pomijane przez użytkownika linie
+   dźwiękowe również nie zużywają limitu. Przed generowaniem następuje ostateczna
+   kontrola całego tekstu, także przy przypisaniu różnych silników do postaci.
+4. Za małe saldo blokuje start bez wysłania tekstu do TTS. Test głosu w tym oknie
+   również korzysta z licznika. Kontrola jest opcjonalna, np. dla silników lokalnych.
+
+### Trwałość i rozliczanie
+
+- Ustawienia, salda i rezerwacje są zapisywane atomowo w `tts-usage.json` w katalogu
+  danych programu (w wydaniu portable obok programu). Klucze API nie są kopiowane
+  do tego pliku: profile rozróżnia skrót danych konta i usługi; Azure uwzględnia
+  klucz oraz region. Głosy tego samego profilu korzystają ze wspólnego salda.
+- Jest to **lokalne oszacowanie**, nie odczyt rozliczeń ani metryk Azure. Nie wymaga
+  Microsoft Entra. Użycie poza kontrolowanym procesem wymaga ręcznej korekty.
+  Zmiana klucza lub regionu oznacza inny profil; należy ustawić jego właściwe saldo.
+  Inni dostawcy mogą stosować przeliczniki znaków na kredyty zależne od modelu.
+- Azure liczy przygotowany tekst jako punkty kodowe Unicode (z wagą 2 dla znaków
+  ideograficznych CJK), ze spacjami i interpunkcją. Obecny generator otacza zwykły
+  tekst znacznikami `speak`/`voice`; sposób syntezy i format odpowiedzi nie zostały
+  zmienione. Wartość nie jest liczbą bajtów UTF-8 ani długością pliku SRT.
+- Przed wysłaniem żądania rezerwowane są znaki. Przetworzona odpowiedź Azure
+  zatwierdza zużycie także wtedy, gdy późniejszy zapis lub konwersja audio zawiedzie.
+  Jednoznaczne odrzucenie żądania zwalnia rezerwację. Zerwane połączenie, przerwanie
+  w trakcie wysyłania lub niejednoznaczny błąd zachowuje rezerwację; program nie
+  zakłada wtedy, że ponowienie będzie bezpłatne. Wpisanie skorygowanego dostępnego
+  salda rozlicza dotychczasowe rezerwacje.
+- Reset odbywa się według lokalnej daty komputera, raz na okres, również po długiej
+  przerwie w uruchamianiu programu. Dzień 29–31 w krótszym miesiącu oznacza ostatni
+  dzień tego miesiąca. Zmiana samego limitu lub dnia nie przywraca zużytego salda.
+- HTTP 429 sam w sobie nie potwierdza wyczerpania limitu miesięcznego. Azure ma
+  maksymalnie pięć prób z przerwami i obsługą `Retry-After`. Jawny błąd limitu
+  znaków zatrzymuje pracę od razu i blokuje dalsze wysyłanie dla tego profilu
+  do resetu lub ręcznej korekty dostępnego salda. Oczekiwanie można przerwać przyciskiem Anuluj.
+  Niepotwierdzone błędy nie uruchamiają automatycznej ponownej płatnej syntezy.
+
+### Odzyskiwanie i wznowienie
+
+Gotowe surowe fragmenty i ich sumy kontrolne są przechowywane w `TtsJobs`, poza
+usuwanym katalogiem tymczasowym. Zapis postępu jest powiązany z tekstem, czasami
+oraz ustawieniami głosu i silnika. Ponowne uruchomienie dla tego samego materiału
+pozwala wykorzystać zachowane fragmenty bez kolejnego TTS i bez ponownego obciążenia
+licznika. Można też jawnie wybrać ponowne wygenerowanie całości.
+
+Po zatrzymaniu wskutek limitu, błędu lub anulowania użytkownik może:
+
+- zapisać UTF-8 SRT z nieukończonymi liniami, włącznie z wysłaną linią bez poprawnego
+  audio; zachowane są oryginalne czasy, numeracja rozpoczyna się od 1;
+- połączyć gotowe fragmenty dotychczasowym procesem korekty i scalania w częściowy
+  WAV, z zachowaniem pozycji czasowych i ciszy w brakujących miejscach. Nie jest
+  uruchamiana ponowna synteza ani tworzenie MKV z niepełnego lektora.
+
+Po potwierdzeniu zapisu wybiera się ścieżki SRT i WAV. Postęp pozostaje zachowany
+również po odmowie zapisu lub zamknięciu programu. Po zakończeniu projektu można
+ręcznie usunąć odpowiedni katalog w `TtsJobs`, aby zwolnić miejsce; usunięcie cache
+nie przywraca zużytych znaków.
+
+Moduły miksowania i muksowania MKV pozostają takie jak w 4.2.2. Funkcje masowe
+5.1 i 5.2 nie należą do tego wydania.
 
 ## Widoczne pliki i kolejne eksporty w 4.2.2
 
@@ -108,7 +179,7 @@ syntezę Azure, korektę synchronizacji i szybkie scalanie WAV z wersji 3.
    używane automatycznie.
 3. Włącz **Add audio to video file** i wygeneruj lektora normalnie. Po korekcie
    klipów program scala lektora i pyta o miejsce zapisu zsynchronizowanego WAV.
-4. Po zapisaniu WAV otwiera się okno **Lektor PL — wersja 4.2.2**. Wybierz konkretną
+4. Po zapisaniu WAV otwiera się okno **Lektor PL — wersja 4.2.3**. Wybierz konkretną
    ścieżkę źródłową, kodek, bitrate, poziomy i tryb miksowania.
    Opcjonalnie wskaż **Wymuszone napisy PL (SRT)**.
 5. **Miks + MKV** zapisuje niezależny miks audio, następnie tworzy i sprawdza MKV.

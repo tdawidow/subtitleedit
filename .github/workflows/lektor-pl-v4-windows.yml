@@ -37,10 +37,10 @@ jobs:
           "MKVMERGE_TEST_PATH=$mkvmerge" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           & $mkvmerge --version
 
-      - name: Build and verify Lektor PL export
+      - name: Build and verify TTS usage and Lektor PL export
         shell: pwsh
         run: |
-          dotnet test tests/UI/UITests.csproj -c Release --filter "FullyQualifiedName~LektorExportTests" --logger "trx;LogFileName=lektor-v4.trx"
+          dotnet test tests/UI/UITests.csproj -c Release --filter "FullyQualifiedName~LektorExportTests|FullyQualifiedName~TtsUsage|FullyQualifiedName~TextToSpeechWindowTests|FullyQualifiedName~TtsRunFolderTests|FullyQualifiedName~TtsSilence" --logger "trx;LogFileName=lektor-v423.trx"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Publish Windows portable build
@@ -58,13 +58,13 @@ jobs:
           # Ship the working MKVToolNix installation (including DLLs and license files).
           Copy-Item "C:\Program Files\MKVToolNix" "./publish/lektor-pl-v4-win-x64/MKVToolNix" -Recurse
           Get-ChildItem "./publish/lektor-pl-v4-win-x64" -Filter "*.pdb" -Recurse -File | Remove-Item -Force
-          Compress-Archive -Path "./publish/lektor-pl-v4-win-x64/*" -DestinationPath "./SubtitleEdit-LektorPL-v4.2.2-Windows-x64.zip"
+          Compress-Archive -Path "./publish/lektor-pl-v4-win-x64/*" -DestinationPath "./SubtitleEdit-LektorPL-v4.2.3-Windows-x64.zip"
 
       - name: Upload portable build
         uses: actions/upload-artifact@v5
         with:
-          name: SubtitleEdit-LektorPL-v4.2.2-Windows-x64
-          path: ./SubtitleEdit-LektorPL-v4.2.2-Windows-x64.zip
+          name: SubtitleEdit-LektorPL-v4.2.3-Windows-x64
+          path: ./SubtitleEdit-LektorPL-v4.2.3-Windows-x64.zip
           if-no-files-found: error
 
       - name: Upload test results

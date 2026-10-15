@@ -28,7 +28,7 @@ public class TextToSpeechWindow : Window
     public TextToSpeechWindow(TextToSpeechViewModel vm)
     {
         UiUtil.InitializeWindow(this, GetType().Name);
-        Title = UiUtil.MakeWindowTitle(Se.Language.Video.TextToSpeech.Title);
+        Title = UiUtil.MakeWindowTitle(Se.Language.Video.TextToSpeech.Title + " — Lektor PL 4.2.3");
         SizeToContent = SizeToContent.WidthAndHeight;
         CanResize = false;
 
@@ -310,6 +310,8 @@ public class TextToSpeechWindow : Window
         comboBoxEngines.ItemTemplate = BuildEngineItemTemplate();
         comboBoxEngines.SelectionChanged += vm.SelectedEngineChanged;
         _comboBoxEngines = comboBoxEngines;
+        var usageSettings = UiUtil.MakeButton(vm.ShowUsageSettingsCommand, IconNames.Settings, "Limit i licznik znaków TTS").WithMarginLeft(5);
+        usageSettings.Name = "TtsUsageSettings";
 
         var panelEngine = new StackPanel
         {
@@ -323,6 +325,7 @@ public class TextToSpeechWindow : Window
                     MinWidth = labelMinWidth,
                 },
                 comboBoxEngines,
+                usageSettings,
                 UiUtil.MakeButton(vm.ShowEngineSettingsCommand, IconNames.Settings, $"{Se.Language.General.Engine} - {Se.Language.General.Settings}")
                     .WithMarginLeft(5)
                     .WithBindIsVisible(nameof(vm.IsEngineSettingsVisible)),
@@ -581,7 +584,21 @@ public class TextToSpeechWindow : Window
         };
 
         grid.Add(panelEngine, 0, 0);
-        grid.Add(labelEngineDescription, 1, 0);
+        grid.Add(new StackPanel
+        {
+            Spacing = 3,
+            Children =
+            {
+                new TextBlock
+                {
+                    Name = "TtsUsageSummary", Margin = new Thickness(labelMinWidth + 5, 5, 0, 0),
+                    MaxWidth = 440, FontSize = UiUtil.ScaledFontSize(11.5), HorizontalAlignment = HorizontalAlignment.Left,
+                    TextWrapping = TextWrapping.Wrap,
+                    [!TextBlock.TextProperty] = new Binding(nameof(vm.UsageSummary)),
+                },
+                labelEngineDescription,
+            },
+        }, 1, 0);
         grid.Add(panelModel, 2, 0);
         grid.Add(panelVoice, 3, 0);
         grid.Add(panelRegion, 4, 0);

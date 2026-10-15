@@ -9,6 +9,7 @@ public record TtsResult
     // Human-readable reason when Error is true (e.g. the HTTP status + response body of a failed
     // API call), so the UI can tell the user *why* segments failed instead of a bare count (#12093).
     public string ErrorMessage { get; init; } = string.Empty;
+    public Usage.TtsFailureKind FailureKind { get; init; }
 
     public TtsResult()
     {

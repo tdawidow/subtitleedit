@@ -1,4 +1,4 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Threading;
 using Nikse.SubtitleEdit.Core.Common;
@@ -56,7 +56,7 @@ public sealed class LektorExportWindow : Window
     {
         _files = files;
         UiUtil.InitializeWindow(this, GetType().Name);
-        Title = "Lektor PL — wersja 4.2.2";
+        Title = "Lektor PL — wersja 4.2.3";
         Width = 900; Height = 820; MinWidth = 600; MinHeight = 500;
         _video.Text = video; _wave.Text = wave;
         try { _mkvmerge.Text = LektorMkvMuxer.ResolveExecutable(); }
