@@ -69,6 +69,8 @@ using ElevenLabsSettingsViewModel = Nikse.SubtitleEdit.Features.Video.TextToSpee
 using ReviewSpeechViewModel = Nikse.SubtitleEdit.Features.Video.TextToSpeech.ReviewSpeech.ReviewSpeechViewModel;
 using Timer = System.Timers.Timer;
 using Nikse.SubtitleEdit.UiLogic.Media;
+using Nikse.SubtitleEdit.Features.Video.TextToSpeech.LektorPl;
+using Nikse.SubtitleEdit.Features.Video.TextToSpeech.Usage;
 
 namespace Nikse.SubtitleEdit.Features.Video.TextToSpeech;
 
@@ -103,6 +105,8 @@ public partial class TextToSpeechViewModel : ObservableObject
     [ObservableProperty] private bool _isVoiceComboEnabled;
     [ObservableProperty] private bool _doReviewAudioClips;
     [ObservableProperty] private bool _doGenerateVideoFile;
+    [ObservableProperty] private bool _useLektorPlExport = true;
+    private string _lastSavedNarratorWave = string.Empty;
     [ObservableProperty] private bool _doAddBackgroundMusic;
     [ObservableProperty] private bool _isEdgeTtsEngine;
     [ObservableProperty] private bool _isGenerating;
@@ -238,6 +242,11 @@ public partial class TextToSpeechViewModel : ObservableObject
 
     private void OnTimerOnElapsed(object? sender, ElapsedEventArgs args)
     {
+        if (Environment.TickCount64 - _lastUsageRefresh > 1500)
+        {
+            _lastUsageRefresh = Environment.TickCount64;
+            Dispatcher.UIThread.Post(RefreshUsageEstimate);
+        }
         lock (_playLock)
         {
             if (_mpvContext == null)
@@ -295,6 +304,7 @@ public partial class TextToSpeechViewModel : ObservableObject
 
         DoReviewAudioClips = Se.Settings.Video.TextToSpeech.ReviewAudioClips;
         DoGenerateVideoFile = Se.Settings.Video.TextToSpeech.GenerateVideoFile;
+        UseLektorPlExport = Se.Settings.Video.TextToSpeech.UseLektorPlExport;
         DoAddBackgroundMusic = Se.Settings.Video.BackgroundMusic.AddToTextToSpeech;
 
         if (SelectedEngine is AzureSpeech)
@@ -331,6 +341,7 @@ public partial class TextToSpeechViewModel : ObservableObject
         Se.Settings.Video.TextToSpeech.Voice = SelectedVoice?.Name ?? string.Empty;
         Se.Settings.Video.TextToSpeech.ReviewAudioClips = DoReviewAudioClips;
         Se.Settings.Video.TextToSpeech.GenerateVideoFile = DoGenerateVideoFile;
+        Se.Settings.Video.TextToSpeech.UseLektorPlExport = UseLektorPlExport;
         Se.Settings.Video.BackgroundMusic.AddToTextToSpeech = DoAddBackgroundMusic;
 
         if (SelectedEngine is AzureSpeech)
@@ -554,6 +565,7 @@ public partial class TextToSpeechViewModel : ObservableObject
 
     partial void OnSelectedRegionChanged(string? value)
     {
+        InvalidateUsageEstimate();
         // For the OpenAI-compatible engine the region combo picks the provider. Each provider
         // keeps its own API key and model, so stash the typed key under the old provider and
         // load the new provider's key, models and voices.
@@ -628,6 +640,7 @@ public partial class TextToSpeechViewModel : ObservableObject
 
     partial void OnSelectedModelChanged(string? value)
     {
+        InvalidateUsageEstimate();
         RefreshInstructionVisibility();
         UpdateVoiceLock();
 
@@ -680,6 +693,7 @@ public partial class TextToSpeechViewModel : ObservableObject
 
     partial void OnSelectedVoiceChanged(Voice? value)
     {
+        InvalidateUsageEstimate();
         UpdateOmniVoicePickerState();
         // Fire-and-forget: when the user picks a CosyVoice3 or F5-TTS clone voice that has
         // no .txt sidecar, immediately prompt for the transcription. Writes the sidecar and
@@ -1160,6 +1174,7 @@ public partial class TextToSpeechViewModel : ObservableObject
         _waveFolder = TtsRunFolder.Create(waveFolder);
 
         RefreshCast(ActorVoiceDetector.Detect(subtitle, format), subtitle);
+        InvalidateUsageEstimate();
     }
 
     /// <summary>
@@ -2043,7 +2058,7 @@ public partial class TextToSpeechViewModel : ObservableObject
             // await, so awaiting it directly kept the dispatcher busy and left the "please wait"
             // popup above unpainted for the whole spawn (#12878).
             var result = await Task.Run(() =>
-                engine.Speak(text, _waveFolder, voice, SelectedLanguage, SelectedRegion, SelectedModel, testVoiceToken));
+                SpeakWithUsageAsync(engine, text, voice, SelectedLanguage, SelectedRegion, SelectedModel, testVoiceToken));
             if (!testVoiceToken.IsCancellationRequested)
             {
                 if (result.Error || string.IsNullOrEmpty(result.FileName) || !File.Exists(result.FileName))
@@ -2344,7 +2359,31 @@ public partial class TextToSpeechViewModel : ObservableObject
     [RelayCommand]
     private async Task ShowEncodingSettings()
     {
+        if (UseLektorPlExport)
+        {
+            await OpenLektorExport();
+            return;
+        }
         await _windowService.ShowDialogAsync<EncodingSettingsWindow, EncodingSettingsViewModel>(Window!, vm => { });
+    }
+
+    [RelayCommand]
+    private async Task OpenLektorExport()
+    {
+        if (Window == null || IsGenerating) return;
+        await new LektorExportWindow(_fileHelper, _videoFileName, _lastSavedNarratorWave).ShowDialog<string?>(Window);
+    }
+
+    [RelayCommand]
+    private async Task SelectLektorVideo()
+    {
+        if (Window == null || IsGenerating) return;
+        var file = await _fileHelper.PickOpenVideoFile(Window, "Wybierz źródłowe wideo do lektora PL");
+        if (string.IsNullOrEmpty(file)) return;
+        _videoFileName = file;
+        _mediaInfo = null;
+        HasVideoFile = true;
+        VideoInfo = CapFileName(Path.GetFileName(file), 40);
     }
 
     [RelayCommand]
@@ -2373,7 +2412,7 @@ public partial class TextToSpeechViewModel : ObservableObject
 
     private bool ShouldRemoveOriginalSpeech()
     {
-        return Se.Settings.Video.TextToSpeech.RemoveOriginalSpeech &&
+        return !UseLektorPlExport && Se.Settings.Video.TextToSpeech.RemoveOriginalSpeech &&
                DoGenerateVideoFile &&
                !string.IsNullOrEmpty(_videoFileName) &&
                File.Exists(_videoFileName);
@@ -3039,8 +3078,7 @@ public partial class TextToSpeechViewModel : ObservableObject
                 SeLogger.Error(ex, "TTS window: cancelling the running pipeline failed");
             }
 
-            IsGenerating = false;
-            ProgressOpacity = 0;
+            ProgressText = "Zatrzymywanie TTS — zachowywanie gotowych fragmentów…";
             return;
         }
 
@@ -3177,9 +3215,10 @@ public partial class TextToSpeechViewModel : ObservableObject
         var outputFolder = Path.GetDirectoryName(audioFileName)!;
 
         File.Move(mergedAudioFileName, audioFileName, true);
+        _lastSavedNarratorWave = audioFileName;
         Se.WriteToolsLog($"TTS merge done: wrote \"{audioFileName}\"");
 
-        if (DoAddBackgroundMusic)
+        if (DoAddBackgroundMusic && !UseLektorPlExport)
         {
             try
             {
@@ -3199,6 +3238,13 @@ public partial class TextToSpeechViewModel : ObservableObject
 
     private async Task HandleAddToVideo(string mergedAudioFileName, string outputFolder, CancellationToken cancellationToken)
     {
+        if (UseLektorPlExport && DoGenerateVideoFile && Window != null)
+        {
+            // The durable WAV is already saved. The independent dialog owns cancellation,
+            // retries, mix export and MKV verification without rerunning the TTS engine.
+            await new LektorExportWindow(_fileHelper, _videoFileName, mergedAudioFileName).ShowDialog<string?>(Window);
+            return;
+        }
         if (DoGenerateVideoFile && !string.IsNullOrEmpty(_videoFileName))
         {
             var outputFileName = await AddAudioToVideoFile(mergedAudioFileName, outputFolder, cancellationToken);
@@ -3600,7 +3646,7 @@ public partial class TextToSpeechViewModel : ObservableObject
             : string.Empty;
     }
 
-    private async Task<TtsStepResult[]?> GenerateSpeech(CancellationToken cancellationToken)
+    internal async Task<TtsStepResult[]?> GenerateSpeech(CancellationToken cancellationToken)
     {
         var engine = SelectedEngine;
         var voice = SelectedVoice;
@@ -3617,6 +3663,11 @@ public partial class TextToSpeechViewModel : ObservableObject
             // Resolved per-actor cast (engine + voice + instruction). When _actorVoiceMappings is
             // empty, every paragraph falls back to the globally selected engine/voice.
             var castContext = await BuildCastContextAsync();
+            var usagePlan = _subtitle.Paragraphs.Select(p => ResolveVoiceForParagraph(p, castContext, engine, voice)).ToArray();
+            var usageRun = await PrepareUsageRunAsync(usagePlan);
+            if (usageRun == null) return null;
+            using var usageJob = usageRun.Value.Job;
+            var resumeUsage = usageRun.Value.Resume;
 
             // "Clone from video": cut every line's reference before synthesising anything, so a
             // missing video or a dead ffmpeg is reported once, up front, instead of failing line
@@ -3664,8 +3715,37 @@ public partial class TextToSpeechViewModel : ObservableObject
                 // the row's engine isn't CrispASR-backed. Off the UI thread because Kill +
                 // WaitForExit can take a few seconds per stuck process.
                 await Task.Run(() => StopOtherCrispAsrServers(resolution.Engine));
-                var speakResult = await SpeakOneParagraphAsync(
-                    resolution, language, region, model, cancellationToken);
+                TtsResult speakResult;
+                try
+                {
+                    var cached = resumeUsage ? usageJob.GetClip(index) : null;
+                    if (cached != null)
+                    {
+                        // Work on a copy: speed correction/review must never modify durable raw clips.
+                        var workingCopy = Path.Combine(_waveFolder, Guid.NewGuid().ToString("N") + Path.GetExtension(cached));
+                        File.Copy(cached, workingCopy);
+                        speakResult = new TtsResult(workingCopy, resolution.Text);
+                    }
+                    else
+                    {
+                        _usageSendingIndex = index;
+                        try { speakResult = await SpeakOneParagraphAsync(resolution, language, region, model, cancellationToken); }
+                        finally { _usageSendingIndex = -1; }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    await RecoverUsageRunAsync(usageJob, resultList,
+                        "Przerwano pracę. Żądanie będące w trakcie wysyłania mogło zużyć znaki; jego rezerwacja pozostaje w liczniku.");
+                    return null;
+                }
+                if (speakResult.FailureKind != TtsFailureKind.None ||
+                    ((speakResult.Error || string.IsNullOrEmpty(speakResult.FileName)) && (resolution.Engine is AzureSpeech || IsBatchMode)))
+                {
+                    await RecoverUsageRunAsync(usageJob, resultList,
+                        string.IsNullOrEmpty(speakResult.ErrorMessage) ? "Silnik TTS nie zwrócił poprawnego audio." : speakResult.ErrorMessage);
+                    return null;
+                }
                 if (speakResult.Error || string.IsNullOrEmpty(speakResult.FileName))
                 {
                     var swapped = await SpeakWithFallbackReferenceAsync(
@@ -3680,6 +3760,12 @@ public partial class TextToSpeechViewModel : ObservableObject
                 if (speakResult.Error && !string.IsNullOrEmpty(speakResult.ErrorMessage) && !errorMessages.Contains(speakResult.ErrorMessage))
                 {
                     errorMessages.Add(speakResult.ErrorMessage);
+                }
+                if (!speakResult.Error && !string.IsNullOrEmpty(speakResult.FileName) && File.Exists(speakResult.FileName) && new FileInfo(speakResult.FileName).Length > 0)
+                {
+                    if (!resumeUsage || usageJob.GetClip(index) == null) usageJob.Complete(index, speakResult.FileName);
+                    _usageCompleted.Add(index);
+                    RefreshUsageEstimate();
                 }
                 resultList.Add(new TtsStepResult
                 {
@@ -3700,6 +3786,7 @@ public partial class TextToSpeechViewModel : ObservableObject
 
                 if (cancellationToken.IsCancellationRequested)
                 {
+                    await RecoverUsageRunAsync(usageJob, resultList, "Przerwano generowanie TTS.");
                     return null;
                 }
 
@@ -3861,7 +3948,7 @@ public partial class TextToSpeechViewModel : ObservableObject
             var result = await TtsInstructionSwap.RunAsync(
                 resolution.Engine,
                 resolution.Instruction,
-                () => resolution.Engine.Speak(resolution.Text, _waveFolder, resolution.Voice,
+                () => SpeakWithUsageAsync(resolution.Engine, resolution.Text, resolution.Voice,
                     language, region, model, cancellationToken));
 
             // The counter tracks failures *in a row*, so a line that succeeds first time
@@ -3889,7 +3976,7 @@ public partial class TextToSpeechViewModel : ObservableObject
                 var retried = await TtsInstructionSwap.RunAsync(
                     resolution.Engine,
                     resolution.Instruction,
-                    () => resolution.Engine.Speak(resolution.Text, _waveFolder, resolution.Voice,
+                    () => SpeakWithUsageAsync(resolution.Engine, resolution.Text, resolution.Voice,
                         language, region, model, cancellationToken));
                 _speakRetryFailures = 0; // see the reset on first-attempt success below too
                 Se.WriteToolsLog("TTS generation: the segment succeeded on retry");
@@ -3955,7 +4042,7 @@ public partial class TextToSpeechViewModel : ObservableObject
                 var result = await TtsInstructionSwap.RunAsync(
                     resolution.Engine,
                     resolution.Instruction,
-                    () => resolution.Engine.Speak(resolution.Text, _waveFolder, voice,
+                    () => SpeakWithUsageAsync(resolution.Engine, resolution.Text, voice,
                         language, region, model, cancellationToken));
                 if (result.Error || string.IsNullOrEmpty(result.FileName))
                 {

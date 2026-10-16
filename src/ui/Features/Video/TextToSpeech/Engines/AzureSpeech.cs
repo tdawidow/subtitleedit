@@ -161,7 +161,19 @@ public class AzureSpeech : ITtsEngine
         Se.WriteToolsLog($"AzureSpeech: voice={azureVoice.ShortName}, locale={azureVoice.Locale}, region={region}, model={model}, textLen={text.Length}");
 
         var ms = new MemoryStream();
-        var ok = await _ttsDownloadService.DownloadAzureVoiceSpeak(text, azureVoice, model ?? string.Empty, Se.Settings.Video.TextToSpeech.AzureApiKey, "en", region, ms, null, cancellationToken);
+        bool ok;
+        try
+        {
+            ok = await _ttsDownloadService.DownloadAzureVoiceSpeak(text, azureVoice, model ?? string.Empty, Se.Settings.Video.TextToSpeech.AzureApiKey, "en", region, ms, null, cancellationToken);
+        }
+        catch (Usage.TtsServiceException ex)
+        {
+            return new TtsResult { Text = text, Error = true, ErrorMessage = ex.Message, FailureKind = ex.Kind };
+        }
+        catch (System.Net.Http.HttpRequestException ex)
+        {
+            return new TtsResult { Text = text, Error = true, ErrorMessage = ex.Message, FailureKind = Usage.TtsFailureKind.Uncertain };
+        }
         if (!ok)
         {
             Se.WriteToolsLog($"AzureSpeech: request failed (voice={azureVoice.ShortName}, region={region})");

@@ -34,6 +34,13 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Install media tools for export tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg mkvtoolnix
+          echo "FFMPEG_TEST_PATH=$(command -v ffmpeg)" >> "$GITHUB_ENV"
+          echo "MKVMERGE_TEST_PATH=$(command -v mkvmerge)" >> "$GITHUB_ENV"
+
       - name: Restore
         run: dotnet restore SubtitleEdit.sln
 

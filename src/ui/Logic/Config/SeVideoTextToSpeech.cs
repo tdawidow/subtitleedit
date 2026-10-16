@@ -6,6 +6,9 @@ namespace Nikse.SubtitleEdit.Logic.Config;
 
 public class SeVideoTextToSpeech
 {
+    public bool UseLektorPlExport { get; set; } = true;
+    public string LektorMkvmergePath { get; set; } = string.Empty;
+    public Nikse.SubtitleEdit.Features.Video.TextToSpeech.LektorPl.LektorExportOptions LektorExport { get; set; } = new();
     public string Engine { get; set; }
     public string Voice { get; set; }
     public bool ReviewAudioClips { get; set; }

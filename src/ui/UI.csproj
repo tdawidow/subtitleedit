@@ -8,6 +8,7 @@
 		<ApplicationManifest>app.manifest</ApplicationManifest>
 		<AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
 		<AssemblyName>SubtitleEdit</AssemblyName>
+		<Version>5.0.0</Version>
 		<RootNamespace>Nikse.SubtitleEdit</RootNamespace>
 		<AllowUnsafeBlocks>True</AllowUnsafeBlocks>
 		<ApplicationIcon>SE.ico</ApplicationIcon>
