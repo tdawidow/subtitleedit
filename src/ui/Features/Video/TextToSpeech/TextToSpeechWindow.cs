@@ -10,6 +10,8 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
 using System.Collections.ObjectModel;
+using Nikse.SubtitleEdit.Features.Video.TextToSpeech.Batch;
+using Nikse.SubtitleEdit.Features.Video.TextToSpeech.Usage;
 using Nikse.SubtitleEdit.Features.Video.TextToSpeech.Engines;
 using Nikse.SubtitleEdit.Features.Video.TextToSpeech.Voices;
 using Optris.Icons.Avalonia;
@@ -25,10 +27,13 @@ public class TextToSpeechWindow : Window
     private ComboBox? _comboBoxEngines;
     private ComboBox? _comboBoxModels;
 
-    public TextToSpeechWindow(TextToSpeechViewModel vm)
+    public TextToSpeechWindow(TextToSpeechViewModel vm) : this(vm, false) { }
+
+    protected TextToSpeechWindow(TextToSpeechViewModel vm, bool batchMode)
     {
+        vm.IsBatchMode = batchMode;
         UiUtil.InitializeWindow(this, GetType().Name);
-        Title = UiUtil.MakeWindowTitle(Se.Language.Video.TextToSpeech.Title + " — Lektor PL 4.2.3");
+        Title = UiUtil.MakeWindowTitle(Se.Language.Video.TextToSpeech.Title + " — Lektor PL 5.0");
         SizeToContent = SizeToContent.WidthAndHeight;
         CanResize = false;
 
@@ -94,7 +99,16 @@ public class TextToSpeechWindow : Window
         var engineLayout = MakeEngineControls(vm);
         engineLayout.Bind(InputElement.IsEnabledProperty, new Binding("!" + nameof(vm.IsGenerating)));
 
-        var settingsLayout = MakeSettingsControls(vm);
+        var settingsLayout = batchMode ? MakeBatchSettings(vm) : MakeSettingsControls(vm);
+        if (batchMode)
+        {
+            Title = "Lektor PL 5.0 — masowe tworzenie WAV z SRT";
+            SizeToContent = SizeToContent.Manual; CanResize = true;
+            Width = 1400; Height = 900; MinWidth = 900; MinHeight = 600;
+            WindowState = WindowState.Maximized;
+            Content = new BatchTtsPanel(vm, engineLayout, settingsLayout, MakeProgressBarControls(vm));
+            return;
+        }
 
         // Wrap the progress bar layout in WidthIgnoringPanel so its measured width never feeds
         // back up into the outer grid's column sizing. See the panel's class comment for why.
@@ -589,13 +603,7 @@ public class TextToSpeechWindow : Window
             Spacing = 3,
             Children =
             {
-                new TextBlock
-                {
-                    Name = "TtsUsageSummary", Margin = new Thickness(labelMinWidth + 5, 5, 0, 0),
-                    MaxWidth = 440, FontSize = UiUtil.ScaledFontSize(11.5), HorizontalAlignment = HorizontalAlignment.Left,
-                    TextWrapping = TextWrapping.Wrap,
-                    [!TextBlock.TextProperty] = new Binding(nameof(vm.UsageSummary)),
-                },
+                MakeUsageStatistics(vm),
                 labelEngineDescription,
             },
         }, 1, 0);
@@ -678,6 +686,59 @@ public class TextToSpeechWindow : Window
     {
         grid.Add(new Label { Content = label, MinWidth = 60, VerticalAlignment = VerticalAlignment.Center }, row, 0);
         grid.Add(UiUtil.MakeComboBox(items, vm, selectedPropertyPath).WithWidth(200), row, 1);
+    }
+
+    private static Control MakeUsageStatistics(TextToSpeechViewModel vm)
+    {
+        var header = new Grid { ColumnDefinitions = new ColumnDefinitions("125,100,100,110"), Height = 22 };
+        var headings = new[] { "Silnik / konto", "Do wysłania", "Dostępne", "Po generowaniu" };
+        for (var i = 0; i < headings.Length; i++) header.Add(new TextBlock { Text = headings[i], FontSize = 11 }, 0, i);
+        var rows = new ItemsControl
+        {
+            Name = "TtsUsageValues", ItemsSource = vm.UsageStatistics,
+            ItemTemplate = new FuncDataTemplate<TtsUsageStatistic>((row, _) =>
+            {
+                var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("125,100,100,110"), Height = 26, DataContext = row };
+                var names = new[] { nameof(TtsUsageStatistic.Engine), nameof(TtsUsageStatistic.Needed), nameof(TtsUsageStatistic.Available), nameof(TtsUsageStatistic.After) };
+                for (var i = 0; i < names.Length; i++)
+                {
+                    var value = new TextBlock { FontSize = 11.5, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+                    value.Bind(TextBlock.TextProperty, new Binding(names[i]));
+                    grid.Add(new Border { BorderBrush = Brushes.Gray, BorderThickness = new Thickness(0.5), Padding = new Thickness(3, 0), Child = value }, 0, i);
+                }
+                return grid;
+            })
+        };
+        return new StackPanel
+        {
+            Name = "TtsUsageStatistics", Width = 440, Height = 108, HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(10, 5, 0, 0), Spacing = 2,
+            Children =
+            {
+                header, new ScrollViewer { Height = 54, Content = rows },
+                new TextBlock
+                {
+                    Name = "TtsUsageSummary", Height = 26, TextTrimming = TextTrimming.CharacterEllipsis,
+                    FontSize = 11, [!TextBlock.TextProperty] = new Binding(nameof(vm.UsageNotice)),
+                    [!ToolTip.TipProperty] = new Binding(nameof(vm.UsageSummary)),
+                },
+            },
+        };
+    }
+
+    private static Border MakeBatchSettings(TextToSpeechViewModel vm)
+    {
+        return UiUtil.MakeBorderForControl(new StackPanel
+        {
+            Spacing = 12, Margin = new Thickness(12),
+            [!InputElement.IsEnabledProperty] = new Binding("!" + nameof(vm.IsGenerating)),
+            Children =
+            {
+                new TextBlock { Text = "Wspólne ustawienia dla całej kolejki. Każdy SRT tworzy osobny WAV z oryginalnymi czasami i ciszą między liniami. Gotowe fragmenty z zapisanej pracy są używane automatycznie.", MaxWidth = 350, TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = "SRT są czytane jednym wybranym głosem, bez automatycznego łączenia lub usuwania linii. Katalog wynikowy jest wspólny.", MaxWidth = 350, TextWrapping = TextWrapping.Wrap },
+                UiUtil.MakeButton("Ustawienia dźwięku…", vm.ShowAdvancedSettingsCommand),
+            },
+        });
     }
 
     private static Border MakeSettingsControls(TextToSpeechViewModel vm)
@@ -875,6 +936,12 @@ public class TextToSpeechWindow : Window
     protected override void OnClosing(WindowClosingEventArgs e)
     {
         base.OnClosing(e);
+        if (_vm.IsBatchMode && _vm.IsGenerating)
+        {
+            e.Cancel = true;
+            _vm.CancelCommand.Execute(null);
+            return;
+        }
         _vm.OnClosing(e);
     }
 
@@ -882,6 +949,7 @@ public class TextToSpeechWindow : Window
     {
         base.OnLoaded(e);
         _vm.OnLoaded(e);
+        if (_vm.IsBatchMode) WindowState = WindowState.Maximized;
     }
 }
 

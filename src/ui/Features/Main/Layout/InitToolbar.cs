@@ -89,6 +89,23 @@ public static class InitToolbar
 
         stackPanelLeft.Children.Add(new Button
         {
+            Name = "BatchTtsToolbarButton",
+            Content = new Optris.Icons.Avalonia.Icon { Value = IconNames.Waveform, FontSize = 28, Width = 32, Height = 32 },
+            Command = vm.ShowBatchTtsCommand, Background = Brushes.Transparent,
+            [AutomationProperties.NameProperty] = "Lektor PL: masowe SRT → WAV",
+            [ToolTip.TipProperty] = "Lektor PL 5.0 — masowe tworzenie WAV z listy SRT",
+        });
+        stackPanelLeft.Children.Add(new Button
+        {
+            Name = "BatchMuxToolbarButton",
+            Content = new Optris.Icons.Avalonia.Icon { Value = IconNames.MovieOpenOutline, FontSize = 28, Width = 32, Height = 32 },
+            Command = vm.ShowBatchLektorMuxCommand, Background = Brushes.Transparent,
+            [AutomationProperties.NameProperty] = "Lektor PL: masowe muksowanie MKV",
+            [ToolTip.TipProperty] = "Lektor PL 5.0 — masowe MKV: wideo + Miks PL + wymuszone SRT",
+        });
+
+        stackPanelLeft.Children.Add(new Button
+        {
             Name = "LektorExportToolbarButton",
             Content = new Optris.Icons.Avalonia.Icon
             {

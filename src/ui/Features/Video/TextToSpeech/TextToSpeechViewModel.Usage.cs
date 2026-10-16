@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -22,6 +23,8 @@ namespace Nikse.SubtitleEdit.Features.Video.TextToSpeech;
 public partial class TextToSpeechViewModel
 {
     [ObservableProperty] private string _usageSummary = "Znaki TTS: wybierz silnik. Lokalny licznik można włączyć ikoną ustawień.";
+    public ObservableCollection<TtsUsageStatistic> UsageStatistics { get; } = new();
+    [ObservableProperty] private string _usageNotice = "Lokalny licznik; użycie w innych programach wymaga korekty salda.";
     internal TtsUsageStore UsageStore { get; set; } = new();
     internal string UsageJobsRoot { get; set; } = Path.Combine(Se.DataFolder, "TtsJobs");
     private readonly HashSet<int> _usageCompleted = new();
@@ -37,6 +40,8 @@ public partial class TextToSpeechViewModel
     {
         _usageCompleted.Clear();
         _usageResolvedPlan = null;
+        if (IsBatchMode && !IsGenerating)
+            foreach (var item in BatchItems) item.CachedClips = 0;
         RefreshUsageEstimate();
     }
 
@@ -52,7 +57,7 @@ public partial class TextToSpeechViewModel
             var groups = new Dictionary<string, (string Name, long Needed)>();
             for (var i = 0; i < _subtitle.Paragraphs.Count; i++)
             {
-                if (_usageCompleted.Contains(i) || _skipNoiseParagraphs.Contains(_subtitle.Paragraphs[i])) continue;
+                if (_skipNoiseParagraphs.Contains(_subtitle.Paragraphs[i])) continue;
                 var paragraph = _subtitle.Paragraphs[i];
                 var engine = _usageResolvedPlan != null && i < _usageResolvedPlan.Length ? _usageResolvedPlan[i].Engine : SelectedEngine;
                 var text = _usageResolvedPlan != null && i < _usageResolvedPlan.Length ? _usageResolvedPlan[i].Text
@@ -65,9 +70,15 @@ public partial class TextToSpeechViewModel
                 }
                 var account = UsageAccount(engine);
                 groups.TryGetValue(account, out var group);
-                groups[account] = (engine.Name, group.Needed + TtsUsageText.Count(text, engine is AzureSpeech));
+                groups[account] = (engine.Name, group.Needed + (_usageCompleted.Contains(i) ? 0 : TtsUsageText.Count(text, engine is AzureSpeech)));
             }
             if (groups.Count == 0) groups[UsageAccount(SelectedEngine)] = (SelectedEngine.Name, 0);
+            if (IsBatchMode) groups = BatchUsageGroups(groups);
+            // Keep controls alive. Only their value properties change as requests finish.
+            foreach (var stale in UsageStatistics.Where(r => !groups.ContainsKey(r.Account)).ToArray()) UsageStatistics.Remove(stale);
+            foreach (var g in groups)
+                if (!UsageStatistics.Any(r => r.Account == g.Key)) UsageStatistics.Add(new TtsUsageStatistic(g.Key, g.Value.Name));
+            UsageNotice = "Lokalny licznik; użycie w innych programach wymaga korekty salda.";
             UsageSummary = string.Join(Environment.NewLine, groups.Select(g =>
             {
                 var p = UsageStore.Get(g.Key);
@@ -77,6 +88,12 @@ public partial class TextToSpeechViewModel
                 // Available already subtracts the active reservation. Do not also subtract
                 // that same request a second time when projecting the remaining run.
                 var after = p.AvailableCharacters - g.Value.Needed + Math.Min(inFlight, g.Value.Needed);
+                var row = UsageStatistics.First(r => r.Account == g.Key);
+                row.Needed = g.Value.Needed.ToString("N0");
+                row.Available = p.Enabled ? p.AvailableCharacters.ToString("N0") : "wyłączona";
+                row.After = p.Enabled ? after.ToString("N0") : "—";
+                if (p.ProviderQuotaExhausted) UsageNotice = "Limit usługi wyczerpany — reset lub korekta w ustawieniach.";
+                else if (p.ReservedCharacters > 0) UsageNotice = $"Rezerwacje / niepotwierdzone: {p.ReservedCharacters:N0}. Szczegóły w podpowiedzi.";
                 return p.Enabled
                     ? $"{prefix}Do wysłania: {g.Value.Needed:N0} | Dostępne: {p.AvailableCharacters:N0} | Po generowaniu: {after:N0}" +
                       (p.ProviderQuotaExhausted ? "\nUsługa zgłosiła wyczerpanie limitu. Wymagany reset lub korekta salda w ustawieniach." : string.Empty) +
@@ -84,7 +101,7 @@ public partial class TextToSpeechViewModel
                     : $"{prefix}Do wysłania: {g.Value.Needed:N0} | Dostępne: kontrola wyłączona | Po generowaniu: —";
             })) + "\nLokalne oszacowanie; użycie w innych programach wymaga korekty salda.";
         }
-        catch (Exception ex) { UsageSummary = "Nie można odczytać licznika TTS: " + ex.Message; }
+        catch (Exception ex) { UsageNotice = UsageSummary = "Nie można odczytać licznika TTS: " + ex.Message; }
     }
 
     [RelayCommand]
@@ -172,12 +189,9 @@ public partial class TextToSpeechViewModel
         finally { Dispatcher.UIThread.Post(RefreshUsageEstimate); }
     }
 
-    private async Task<(TtsJobStore Job, bool Resume)?> PrepareUsageRunAsync(ResolvedVoice[] plan)
+    private string UsageFingerprint(ResolvedVoice[] plan)
     {
-        _usageResolvedPlan = plan;
-        _usageCompleted.Clear();
-        // Persist only the hash. This input includes credentials and is never written/logged.
-        var fingerprint = TtsUsageStore.Hash(JsonSerializer.Serialize(new
+        return TtsUsageStore.Hash(JsonSerializer.Serialize(new
         {
             Source = _subtitle.FileName,
             Lines = _subtitle.Paragraphs.Select((p, i) => new { Start = p.StartTime.TotalMilliseconds, End = p.EndTime.TotalMilliseconds,
@@ -185,12 +199,21 @@ public partial class TextToSpeechViewModel
                 plan[i].Model, plan[i].Instruction, Account = UsageAccount(plan[i].Engine), Skip = _skipNoiseParagraphs.Contains(p) }),
             Settings = Se.Settings.Video.TextToSpeech,
         }));
+    }
+
+    private async Task<(TtsJobStore Job, bool Resume)?> PrepareUsageRunAsync(ResolvedVoice[] plan)
+    {
+        _usageResolvedPlan = plan;
+        _usageCompleted.Clear();
+        // Persist only the hash. This input includes credentials and is never written/logged.
+        var fingerprint = UsageFingerprint(plan);
         var job = new TtsJobStore(UsageJobsRoot, fingerprint);
         try
         {
             var cached = Enumerable.Range(0, plan.Length).Where(i => !_skipNoiseParagraphs.Contains(_subtitle.Paragraphs[i]) && job.GetClip(i) != null).ToArray();
             var resume = false;
-            if (cached.Length > 0)
+            if (IsBatchMode) resume = true;
+            else if (cached.Length > 0)
             {
                 var answer = await MessageBox.Show(Window!, "Zapisany postęp TTS",
                     $"Znaleziono {cached.Length} gotowych fragmentów dla tych napisów i ustawień.\n\n" +
@@ -235,7 +258,7 @@ public partial class TextToSpeechViewModel
             MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
         if (answer != MessageBoxResult.Yes) return;
         var suggested = Path.GetFileNameWithoutExtension(GetSuggestedMergedAudioFileName()) + "_pozostale.srt";
-        var srt = await _fileHelper.PickSaveFile(Window, ".srt", suggested, "Zapisz pozostałe linie SRT");
+        var srt = IsBatchMode ? BatchRecoveryPath("_pozostale.srt") : await _fileHelper.PickSaveFile(Window, ".srt", suggested, "Zapisz pozostałe linie SRT");
         if (string.IsNullOrWhiteSpace(srt)) return;
         job.SaveRemainingSrt(_subtitle, _usageCompleted, _skipNoiseParagraphs, srt);
         var readyList = results.Where(r => !string.IsNullOrWhiteSpace(r.CurrentFileName) && File.Exists(r.CurrentFileName)).ToList();
@@ -258,7 +281,7 @@ public partial class TextToSpeechViewModel
             await MessageBox.Show(Window, "Zapisano pozostały SRT", srt + "\nBrak gotowych fragmentów do połączenia.", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-        var wave = await _fileHelper.PickSaveFile(Window, ".wav", Path.Combine(Path.GetDirectoryName(srt)!, Path.GetFileNameWithoutExtension(srt) + "_czesciowy.wav"), "Zapisz częściowy WAV lektora");
+        var wave = IsBatchMode ? BatchRecoveryPath("_czesciowy.wav") : await _fileHelper.PickSaveFile(Window, ".wav", Path.Combine(Path.GetDirectoryName(srt)!, Path.GetFileNameWithoutExtension(srt) + "_czesciowy.wav"), "Zapisz częściowy WAV lektora");
         if (string.IsNullOrWhiteSpace(wave)) return;
         // Only local stages: no calls to Speak. A fresh token permits recovery after Stop.
         var fixedClips = await FixSpeed(ready, CancellationToken.None);
@@ -267,7 +290,7 @@ public partial class TextToSpeechViewModel
         if (processed == null) return;
         var merged = await MergeAudioParagraphs(processed, CancellationToken.None);
         if (string.IsNullOrWhiteSpace(merged)) return;
-        File.Move(merged, wave, true);
+        File.Move(merged, wave, !IsBatchMode);
         _lastSavedNarratorWave = wave;
         await MessageBox.Show(Window, "Zapisano odzyskaną pracę", $"SRT: {srt}\nWAV: {wave}\n\nZachowano oryginalne czasy i ciszę w przerwach.", MessageBoxButtons.OK, MessageBoxIcon.Information);
     }

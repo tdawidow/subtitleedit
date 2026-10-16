@@ -3740,7 +3740,7 @@ public partial class TextToSpeechViewModel : ObservableObject
                     return null;
                 }
                 if (speakResult.FailureKind != TtsFailureKind.None ||
-                    ((speakResult.Error || string.IsNullOrEmpty(speakResult.FileName)) && resolution.Engine is AzureSpeech))
+                    ((speakResult.Error || string.IsNullOrEmpty(speakResult.FileName)) && (resolution.Engine is AzureSpeech || IsBatchMode)))
                 {
                     await RecoverUsageRunAsync(usageJob, resultList,
                         string.IsNullOrEmpty(speakResult.ErrorMessage) ? "Silnik TTS nie zwrócił poprawnego audio." : speakResult.ErrorMessage);

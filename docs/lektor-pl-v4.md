@@ -1,5 +1,72 @@
-# Lektor PL — wersja 4.2.3
+# Lektor PL — wersja 5.0
 
+
+## Nowości 5.0
+
+Na górnej belce są dwa dodatkowe przyciski: **masowe SRT → WAV** (ikona fali)
+i **masowe muksowanie MKV** (ikona filmu). Działają bez wczytywania napisów do
+edytora. Dotychczasowa ikona montażu audio-video nadal otwiera pojedynczy Lektor PL.
+Oba nowe okna oraz pojedynczy moduł Lektor PL otwierają się zmaksymalizowane.
+Po zakończeniu pozostają otwarte.
+
+### 5.1 — kolejka SRT → WAV
+
+1. Dodaj przygotowane pliki SRT w UTF-8. Strzałki zmieniają kolejność zaznaczonego
+   wiersza; checkbox w pierwszej kolumnie włącza lub wyłącza plik z kolejki.
+2. Wybierz wspólny silnik, głos, region/model i ustawienia dźwięku. Masowy tryb
+   czyta wszystkie SRT jednym głosem. Nie usuwa ani nie łączy linii i nie zmienia
+   czasów SRT. Klonowanie głosu z osobnych filmów pozostaje w trybie pojedynczym.
+3. Wskaż jeden istniejący katalog WAV. Wynik to `nazwa-SRT.wav` dla każdego pliku.
+   Istniejące wyniki i powtarzające się nazwy blokują start; nie są nadpisywane.
+4. Tabela pokazuje znaki każdego SRT oraz podsumowanie całej kolejki. **Sprawdź
+   kolejkę** dodatkowo sprawdza pliki, zapisane fragmenty i saldo. Gotowe fragmenty
+   są używane automatycznie, a wymagane znaki pomniejszane o pracę już wykonaną.
+   Ostateczna kontrola jest zawsze powtarzana przed startem. Za małe saldo dla
+   całej kolejki blokuje wysyłanie; odznacz część plików i sprawdź ponownie.
+5. Każdy SRT przechodzi dotychczasowe generowanie, korektę szybkości,
+   przetwarzanie dźwięku i zsynchronizowane łączenie z ciszą w przerwach.
+   Nie ma osobnych pytań o katalog lub nazwę każdego pełnego WAV.
+6. Wyczerpanie limitu zatrzymuje kolejkę przed kolejnymi plikami. Program pyta,
+   czy dla bieżącego SRT zapisać brakujące linie i częściowy WAV. Po zgodzie zapisuje
+   je w tym samym katalogu jako `nazwa_pozostale.srt` i `nazwa_czesciowy.wav`
+   (z bezpiecznym numerem, jeśli nazwa już istnieje). Zachowuje oryginalne czasy;
+   nie pobiera ponownie TTS. Surowe fragmenty i manifest postępu pozostają trwałe.
+7. Ukończone pliki są automatycznie odznaczane. Po korekcie salda można ponownie
+   uruchomić pozostałe pozycje; poprawne fragmenty bieżącego pliku zostaną użyte.
+   Stop lub błąd zatrzymuje kolejkę, a ukończone WAV pozostają w katalogu.
+
+### 5.2 — tabela masowego muksowania
+
+1. Wskaż osobne katalogi wideo, **gotowych miksów PL** (np. AC3) i opcjonalnych
+   wymuszonych SRT. Wczytywane są pliki bezpośrednio z katalogu, bez podkatalogów.
+   Każda kolumna jest sortowana alfabetycznie, a powiązania wynikają wyłącznie
+   z numeru wiersza. Program nie zgaduje na podstawie podobieństwa nazw.
+2. Każdy wiersz pokazuje wideo, Miks PL, opcjonalny SRT, wynikowy MKV i stan.
+   Przeciągnięcie komórki na inną w tej samej kolumnie zamienia je miejscami.
+   Menu prawego przycisku pozwala wybrać plik, wkleić ścieżkę, wyczyścić komórkę,
+   wstawić pustą z przesunięciem w dół lub usunąć komórkę z podniesieniem listy.
+   Pozostałe kolumny pozostają na swoich miejscach. Krótsze listy mają puste komórki.
+3. Wskaż jeden wspólny katalog wynikowy. Nazwa wyniku to `nazwa-wideo_PL.mkv`.
+   Pusta komórka SRT oznacza brak dodawania wymuszonych napisów dla tego filmu.
+   Wideo i Miks PL są wymagane w każdym wierszu.
+4. Przed pierwszym wynikiem sprawdzana jest cała tabela: istnienie plików,
+   poprawność SRT, obraz w wideo, dokładnie jedna ścieżka w gotowym miksie,
+   powtórzone przypisania, kolizje nazw i możliwość zapisu. Istniejący MKV blokuje
+   start; nie jest nadpisywany. **Sprawdź całą tabelę** umożliwia kontrolę bez startu.
+5. Muksowanie jest sekwencyjne i używa niezmienionego mechanizmu MKVToolNix.
+   Oryginalne ścieżki i obraz zostają zachowane bez ponownego kodowania.
+   Miks PL jest domyślnym polskim audio. Dodany SRT ma język PL i flagi domyślny
+   oraz wymuszony. Każdy wynik przechodzi dotychczasową kontrolę ścieżek i czasu.
+6. Stop lub błąd zatrzymuje kolejne wiersze; ukończone MKV pozostają w katalogu.
+   Zakończone wiersze można usunąć przyciskiem „Usuń zaznaczony wiersz”;
+   „Wyczyść tabelę” przygotowuje okno do następnego zestawu. Okno zostaje otwarte.
+
+### Stałe statystyki
+
+Pod wyborem silnika pola „Do wysłania”, „Dostępne” i „Po generowaniu” mają
+stałą lokalizację i rozmiar. Aktualizowane są wartości istniejących kontrolek,
+bez przebudowywania panelu. Komunikat również ma stałą wysokość; szczegóły
+rezerwacji i kont są dostępne w podpowiedzi. Zasady rozliczania z 4.2.3 pozostają.
 
 ## Kontrola znaków TTS w 4.2.3
 

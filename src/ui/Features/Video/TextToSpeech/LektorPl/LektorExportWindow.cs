@@ -56,7 +56,8 @@ public sealed class LektorExportWindow : Window
     {
         _files = files;
         UiUtil.InitializeWindow(this, GetType().Name);
-        Title = "Lektor PL — wersja 4.2.3";
+        Title = "Lektor PL — wersja 5.0";
+        WindowState = WindowState.Maximized;
         Width = 900; Height = 820; MinWidth = 600; MinHeight = 500;
         _video.Text = video; _wave.Text = wave;
         try { _mkvmerge.Text = LektorMkvMuxer.ResolveExecutable(); }

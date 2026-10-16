@@ -1,4 +1,4 @@
-name: Lektor PL v4 - Windows x64
+name: Lektor PL 5.0 - Windows x64
 
 on:
   push:
@@ -14,7 +14,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
-      - name: Checkout v4 sources
+      - name: Checkout Lektor PL sources
         uses: actions/checkout@v5
 
       - name: Setup .NET 10
@@ -37,10 +37,10 @@ jobs:
           "MKVMERGE_TEST_PATH=$mkvmerge" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           & $mkvmerge --version
 
-      - name: Build and verify TTS usage and Lektor PL export
+      - name: Build and verify batch queues, TTS usage and Lektor PL export
         shell: pwsh
         run: |
-          dotnet test tests/UI/UITests.csproj -c Release --filter "FullyQualifiedName~LektorExportTests|FullyQualifiedName~TtsUsage|FullyQualifiedName~TextToSpeechWindowTests|FullyQualifiedName~TtsRunFolderTests|FullyQualifiedName~TtsSilence" --logger "trx;LogFileName=lektor-v423.trx"
+          dotnet test tests/UI/UITests.csproj -c Release --filter "FullyQualifiedName~LektorBatchTests|FullyQualifiedName~LektorExportTests|FullyQualifiedName~TtsUsage|FullyQualifiedName~TextToSpeechWindowTests|FullyQualifiedName~TtsRunFolderTests|FullyQualifiedName~TtsSilence" --logger "trx;LogFileName=lektor-v50.trx"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Publish Windows portable build
@@ -48,29 +48,29 @@ jobs:
         run: |
           dotnet publish src/ui/UI.csproj -c Release -r win-x64 --self-contained true `
             -p:PublishSingleFile=true -p:DebugSymbols=false -p:DebugType=none `
-            -o ./publish/lektor-pl-v4-win-x64
+            -o ./publish/lektor-pl-v5-win-x64
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Invoke-WebRequest -Uri "https://github.com/SubtitleEdit/support-files/releases/download/libmpv-2026-08-14b/libmpv2-win64.zip" -OutFile "libmpv2-64.zip"
           Expand-Archive -Path "libmpv2-64.zip" -DestinationPath "libmpv-temp"
-          Copy-Item "libmpv-temp/*" "./publish/lektor-pl-v4-win-x64/"
-          Copy-Item "./LICENSE" "./publish/lektor-pl-v4-win-x64/LICENSE"
-          Copy-Item "./docs/lektor-pl-v4.md" "./publish/lektor-pl-v4-win-x64/Lektor-PL-v4.md"
+          Copy-Item "libmpv-temp/*" "./publish/lektor-pl-v5-win-x64/"
+          Copy-Item "./LICENSE" "./publish/lektor-pl-v5-win-x64/LICENSE"
+          Copy-Item "./docs/lektor-pl-v4.md" "./publish/lektor-pl-v5-win-x64/Lektor-PL-v5.md"
           # Ship the working MKVToolNix installation (including DLLs and license files).
-          Copy-Item "C:\Program Files\MKVToolNix" "./publish/lektor-pl-v4-win-x64/MKVToolNix" -Recurse
-          Get-ChildItem "./publish/lektor-pl-v4-win-x64" -Filter "*.pdb" -Recurse -File | Remove-Item -Force
-          Compress-Archive -Path "./publish/lektor-pl-v4-win-x64/*" -DestinationPath "./SubtitleEdit-LektorPL-v4.2.3-Windows-x64.zip"
+          Copy-Item "C:\Program Files\MKVToolNix" "./publish/lektor-pl-v5-win-x64/MKVToolNix" -Recurse
+          Get-ChildItem "./publish/lektor-pl-v5-win-x64" -Filter "*.pdb" -Recurse -File | Remove-Item -Force
+          Compress-Archive -Path "./publish/lektor-pl-v5-win-x64/*" -DestinationPath "./SubtitleEdit-LektorPL-v5.0-Windows-x64.zip"
 
       - name: Upload portable build
         uses: actions/upload-artifact@v5
         with:
-          name: SubtitleEdit-LektorPL-v4.2.3-Windows-x64
-          path: ./SubtitleEdit-LektorPL-v4.2.3-Windows-x64.zip
+          name: SubtitleEdit-LektorPL-v5.0-Windows-x64
+          path: ./SubtitleEdit-LektorPL-v5.0-Windows-x64.zip
           if-no-files-found: error
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v5
         with:
-          name: LektorPL-v4-test-results
+          name: LektorPL-v5-test-results
           path: tests/UI/TestResults/*.trx
           if-no-files-found: warn
