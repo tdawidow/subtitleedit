@@ -135,8 +135,9 @@ również po odmowie zapisu lub zamknięciu programu. Po zakończeniu projektu m
 ręcznie usunąć odpowiedni katalog w `TtsJobs`, aby zwolnić miejsce; usunięcie cache
 nie przywraca zużytych znaków.
 
-Moduły miksowania i muksowania MKV pozostają takie jak w 4.2.2. Funkcje masowe
-5.1 i 5.2 nie należą do tego wydania.
+W wydaniu 4.2.3 moduły miksowania i muksowania MKV pozostały takie jak w 4.2.2.
+Wydanie 4.2.3 nie zawierało funkcji masowych 5.1 i 5.2; są one dostępne od 5.0,
+opisanej na początku tej instrukcji.
 
 ## Widoczne pliki i kolejne eksporty w 4.2.2
 
