@@ -1,15 +1,15 @@
-# Lektor PL — zadania po wersji 5.0
+# Lektor PL — stan zadań wersji 5.1
 
-Aktualizacja ustaleń: 16 października 2026, według decyzji o osobnych funkcjach.
-Ten dokument opisuje zadania i analizę; nie oznacza implementacji nowej wersji.
+Aktualizacja: 18 października 2026, według decyzji o osobnych funkcjach.
+Punkty 5.1a i 5.3 są zaimplementowane w wersji 5.1; D1 pozostaje do wykonania.
 
 ## Ustalony przebieg pracy
 
 | Etap użytkownika | Funkcja | Wynik | Stan |
 | --- | --- | --- | --- |
 | 1 | Masowe SRT → WAV PL | Osobny zsynchronizowany WAV dla każdego SRT | Działa w 5.0 |
-| 1a | Połączenie dwóch częściowych WAV PL | Jeden kompletny WAV PL | NOWE zadanie 5.1a |
-| 2 | Masowe miksowanie WAV PL z audio wybranym z wideo | Gotowy MIX PL, np. AC3 | PILNE zadanie 5.3, osobne okno |
+| 1a | Połączenie dwóch częściowych WAV/AC3 PL | Jeden kompletny WAV PL | Gotowe w 5.1, zadanie 5.1a |
+| 2 | Masowe miksowanie WAV PL z audio wybranym z wideo | Gotowy MIX PL, np. AC3 | Gotowe w 5.1, zadanie 5.3, osobne okno |
 | 3 | Masowe muksowanie wideo + gotowy MIX PL + opcjonalne wymuszone SRT PL | MKV | Gotowe w 5.0 |
 
 Masowe miksowanie audio ma otrzymać własne okno i korzystać z działającego
@@ -19,7 +19,8 @@ surowym WAV a gotowym miksem ani etapu wcześniejszego miksowania.
 
 ## 5.1a — NOWE: połączenie dwóch częściowych WAV lektora PL
 
-**Status: do wykonania.** Prosta, osobna funkcja dostępna przy module WAV.
+**Status: zaimplementowane w 5.1.** Prosta, osobna funkcja dostępna przy module WAV
+oraz z górnej belki programu.
 
 ### Okno i wynik
 
@@ -88,7 +89,7 @@ automatycznego montażu treści na podstawie samej nazwy pliku.
 
 ## 5.3 — PILNE: osobny moduł masowego miksowania audio MIX PL
 
-**Status: do wykonania w następnym kroku.** Nowe, oddzielne, zmaksymalizowane
+**Status: zaimplementowane w 5.1.** Nowe, oddzielne, zmaksymalizowane
 okno, przeznaczone wyłącznie do tworzenia gotowych miksów audio.
 
 ### Wejścia i tabela

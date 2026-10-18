@@ -56,7 +56,7 @@ public sealed class LektorExportWindow : Window
     {
         _files = files;
         UiUtil.InitializeWindow(this, GetType().Name);
-        Title = "Lektor PL — wersja 5.0";
+        Title = "Lektor PL — wersja 5.1";
         WindowState = WindowState.Maximized;
         Width = 900; Height = 820; MinWidth = 600; MinHeight = 500;
         _video.Text = video; _wave.Text = wave;

@@ -23,6 +23,7 @@ internal sealed class BatchTtsPanel : Grid
         controls.Children.Add(UiUtil.MakeButton("↓", vm.BatchDownCommand));
         controls.Children.Add(UiUtil.MakeButton("Usuń wiersz", vm.RemoveBatchItemCommand));
         controls.Children.Add(UiUtil.MakeButton("Sprawdź kolejkę", vm.CheckBatchCommand));
+        controls.Children.Add(UiUtil.MakeButton("Połącz części lektora…", vm.OpenNarratorJoinCommand));
         var output = new TextBox { Name = "BatchWavOutput", MinWidth = 320, PlaceholderText = "Wspólny katalog wynikowy" };
         output.Bind(TextBox.TextProperty, new Binding(nameof(vm.BatchOutputFolder)) { Mode = BindingMode.TwoWay });
         controls.Children.Add(output); controls.Children.Add(UiUtil.MakeButton("Katalog WAV…", vm.PickBatchOutputCommand));

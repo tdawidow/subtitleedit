@@ -18,6 +18,20 @@ public partial class MainViewModel
     }
 
     [RelayCommand]
+    private async Task ShowNarratorJoin()
+    {
+        if (Window == null || !await RequireFfmpegOk()) return;
+        await new NarratorJoinWindow(_fileHelper).ShowDialog<object?>(Window);
+    }
+
+    [RelayCommand]
+    private async Task ShowBatchLektorMix()
+    {
+        if (Window == null || !await RequireFfmpegOk()) return;
+        await new BatchMixWindow(_fileHelper).ShowDialog<object?>(Window);
+    }
+
+    [RelayCommand]
     private async Task ShowBatchLektorMux()
     {
         if (Window == null || !await RequireFfmpegOk()) return;

@@ -93,7 +93,23 @@ public static class InitToolbar
             Content = new Optris.Icons.Avalonia.Icon { Value = IconNames.Waveform, FontSize = 28, Width = 32, Height = 32 },
             Command = vm.ShowBatchTtsCommand, Background = Brushes.Transparent,
             [AutomationProperties.NameProperty] = "Lektor PL: masowe SRT → WAV",
-            [ToolTip.TipProperty] = "Lektor PL 5.0 — masowe tworzenie WAV z listy SRT",
+            [ToolTip.TipProperty] = "Lektor PL 5.1 — masowe tworzenie WAV z listy SRT",
+        });
+        stackPanelLeft.Children.Add(new Button
+        {
+            Name = "NarratorJoinToolbarButton",
+            Content = new Optris.Icons.Avalonia.Icon { Value = IconNames.LinkVariant, FontSize = 28, Width = 32, Height = 32 },
+            Command = vm.ShowNarratorJoinCommand, Background = Brushes.Transparent,
+            [AutomationProperties.NameProperty] = "Lektor PL: połącz dwie części lektora",
+            [ToolTip.TipProperty] = "Lektor PL 5.1 — połącz części WAV / AC3 po przerwaniu TTS",
+        });
+        stackPanelLeft.Children.Add(new Button
+        {
+            Name = "BatchMixToolbarButton",
+            Content = new Optris.Icons.Avalonia.Icon { Value = IconNames.MusicNote, FontSize = 28, Width = 32, Height = 32 },
+            Command = vm.ShowBatchLektorMixCommand, Background = Brushes.Transparent,
+            [AutomationProperties.NameProperty] = "Lektor PL: masowe miksowanie audio MIX PL",
+            [ToolTip.TipProperty] = "Lektor PL 5.1 — masowy MIX PL: oryginalne audio filmu + WAV lektora",
         });
         stackPanelLeft.Children.Add(new Button
         {
@@ -101,7 +117,7 @@ public static class InitToolbar
             Content = new Optris.Icons.Avalonia.Icon { Value = IconNames.MovieOpenOutline, FontSize = 28, Width = 32, Height = 32 },
             Command = vm.ShowBatchLektorMuxCommand, Background = Brushes.Transparent,
             [AutomationProperties.NameProperty] = "Lektor PL: masowe muksowanie MKV",
-            [ToolTip.TipProperty] = "Lektor PL 5.0 — masowe MKV: wideo + Miks PL + wymuszone SRT",
+            [ToolTip.TipProperty] = "Lektor PL 5.1 — masowe MKV: wideo + Miks PL + wymuszone SRT",
         });
 
         stackPanelLeft.Children.Add(new Button

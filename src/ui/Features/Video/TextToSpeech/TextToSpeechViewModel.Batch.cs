@@ -15,6 +15,7 @@ using Nikse.SubtitleEdit.Core.SubtitleFormats;
 using Nikse.SubtitleEdit.Features.Shared;
 using Nikse.SubtitleEdit.Features.Video.TextToSpeech.ActorVoices;
 using Nikse.SubtitleEdit.Features.Video.TextToSpeech.Batch;
+using Nikse.SubtitleEdit.Features.Video.TextToSpeech.LektorPl;
 using Nikse.SubtitleEdit.Features.Video.TextToSpeech.Engines;
 using Nikse.SubtitleEdit.Features.Video.TextToSpeech.Usage;
 
@@ -66,6 +67,12 @@ public partial class TextToSpeechViewModel
         RenumberBatch();
         OnBatchOutputFolderChanged(BatchOutputFolder);
         RefreshUsageEstimate();
+    }
+
+    [RelayCommand] private async Task OpenNarratorJoin()
+    {
+        if (Window == null || IsGenerating) return;
+        await new NarratorJoinWindow(_fileHelper, _folderHelper).ShowDialog<object?>(Window);
     }
 
     [RelayCommand] private async Task AddBatchSrt()

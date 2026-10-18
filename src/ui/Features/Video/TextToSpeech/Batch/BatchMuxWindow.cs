@@ -34,7 +34,7 @@ public sealed class BatchMuxWindow : Window
     {
         _files = files; _folders = folders ?? new FolderHelper();
         UiUtil.InitializeWindow(this, GetType().Name);
-        Title = "Lektor PL 5.0 — masowe muksowanie MKV";
+        Title = "Lektor PL 5.1 — masowe muksowanie MKV";
         Width = 1400; Height = 900; MinWidth = 900; MinHeight = 600; WindowState = WindowState.Maximized;
         foreach (var column in Enum.GetValues<MuxColumn>()) _sources.Children.Add(SourceRow(column));
         var output = new Grid { ColumnDefinitions = new ColumnDefinitions("185,*,Auto"), ColumnSpacing = 8 };

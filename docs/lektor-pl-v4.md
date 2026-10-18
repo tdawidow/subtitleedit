@@ -1,4 +1,54 @@
-# Lektor PL — wersja 5.0
+# Lektor PL — wersja 5.1
+
+## Nowości 5.1
+
+### 5.1a — połącz części lektora po przerwaniu TTS
+
+Na górnej belce wybierz **Lektor PL: połącz dwie części lektora** (ikona
+połączenia). Ta sama funkcja jest dostępna jako **Połącz części lektora…**
+w oknie masowego generowania WAV.
+
+1. Wklej ścieżki lub wybierz dwie części czystego lektora WAV/AC3 tego samego
+   odcinka. Oba pliki muszą zachowywać pierwotne pozycje wypowiedzi i ciszę
+   od 00:00, tak jak pliki odzyskane po przerwaniu TTS.
+2. Wskaż katalog. Nazwa jest proponowana z fragmentu przed pierwszym `_`,
+   np. `S02E25.wav`; można ją poprawić przed startem.
+3. **Sprawdź części** odczytuje ich długości i sprawdza nakładanie audio.
+   **Połącz w jeden WAV** powtarza kontrolę, łączy części i sprawdza wynik.
+4. Wynik jest jednym WAV PCM 16-bit, stereo, 48 kHz, o długości dłuższej
+   części. Zachowuje ciszę, synchronizację i poziom pojedynczej wypowiedzi;
+   mono jest kopiowane do obu kanałów stereo. Operacja nie uruchamia TTS
+   i nie zmienia licznika znaków.
+5. Jednoczesne audio w obu częściach, wskazanie tego samego wejścia lub
+   istniejącego wyniku blokuje zapis. Pliki źródłowe pozostają zachowane.
+   **Stop** przerywa operację i usuwa jej plik tymczasowy. Okno pozostaje otwarte.
+
+### 5.3 — masowe tworzenie MIX PL
+
+Na górnej belce wybierz **Lektor PL: masowe miksowanie audio MIX PL** (ikona
+nuty). Otwiera się osobne, zmaksymalizowane okno.
+
+1. Wczytaj katalog wideo i katalog zsynchronizowanych WAV lektora. Każda
+   kolumna jest porządkowana alfabetycznie. Pary tworzy kolejność wierszy.
+2. Sprawdź pary. Przeciągnięcie komórki zamienia ją z inną w tej samej kolumnie.
+   Prawy przycisk pozwala wybrać/wkleić plik, wyczyścić, wstawić pustą komórkę
+   z przesunięciem w dół lub usunąć komórkę z przesunięciem w górę. Można
+   również usunąć cały zaznaczony wiersz.
+3. Wybierz **Odczytaj ścieżki audio filmów**. Jeśli film ma kilka ścieżek,
+   wybierz właściwą w jego wierszu, kierując się językiem, nazwą i parametrami.
+   Jedyna ścieżka jest wybierana automatycznie. Wybór należy do filmu;
+   przestawienie WAV nie zmienia wybranego oryginalnego audio.
+4. Wskaż jeden katalog dla wszystkich wyników i wspólne ustawienia miksowania.
+   Są zgodne z pojedynczym **Tylko miks**: dynamiczne/stałe ściszanie, poziomy,
+   próg, ratio, attack/release, kodek i bitrate. Dostępne są AC3, AAC, MP3 i FLAC.
+5. **Sprawdź całą tabelę** sprawdza komplet par, ścieżki audio, wejścia WAV,
+   katalog i kolizje nazw. Ta kontrola jest zawsze wykonywana ponownie przed
+   **Twórz kolejkę MIX PL**. Wyniki mają nazwy `nazwa_wideo_MiksPL.ac3`
+   lub rozszerzenie odpowiednie do wybranego kodeka.
+6. Kolejka używa działającego pojedynczego miksera. Zapisuje wyłącznie audio,
+   gotowe do obecnego masowego tworzenia MKV. Nie wymaga SRT ani MKVToolNix.
+   Błąd lub Stop zatrzymuje dalsze wiersze; ukończone miksy pozostają dostępne,
+   a pliki tymczasowe przerwanej operacji są usuwane. Okno pozostaje otwarte.
 
 
 ## Nowości 5.0
