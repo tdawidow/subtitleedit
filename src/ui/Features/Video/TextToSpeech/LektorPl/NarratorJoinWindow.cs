@@ -32,7 +32,7 @@ public sealed class NarratorJoinWindow : Window
     {
         _files = files; _folders = folders ?? new FolderHelper();
         UiUtil.InitializeWindow(this, GetType().Name);
-        Title = "Lektor PL 5.1 — połącz części lektora po przerwaniu TTS";
+        Title = "Lektor PL 5.2 — połącz części lektora po przerwaniu TTS";
         Width = 1050; Height = 620; MinWidth = 700; MinHeight = 500;
         _inputs.Children.Add(new TextBlock
         {

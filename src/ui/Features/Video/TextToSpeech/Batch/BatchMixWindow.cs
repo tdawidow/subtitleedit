@@ -38,7 +38,7 @@ public sealed class BatchMixWindow : Window
     {
         _files = files; _folders = folders ?? new FolderHelper();
         UiUtil.InitializeWindow(this, GetType().Name);
-        Title = "Lektor PL 5.1 — masowe miksowanie audio MIX PL";
+        Title = "Lektor PL 5.2 — masowe miksowanie audio MIX PL";
         Width = 1500; Height = 950; MinWidth = 1000; MinHeight = 650; WindowState = WindowState.Maximized;
         _settings = new LektorMixSettingsPanel(Se.Settings.Video.TextToSpeech.LektorExport ?? new LektorExportOptions());
         Table.Options = _settings.ReadOptions();

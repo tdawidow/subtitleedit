@@ -1,7 +1,8 @@
-# Lektor PL — stan zadań wersji 5.1
+# Lektor PL — stan zadań wersji 5.2
 
 Aktualizacja: 18 października 2026, według decyzji o osobnych funkcjach.
-Punkty 5.1a i 5.3 są zaimplementowane w wersji 5.1; D1 pozostaje do wykonania.
+Punkty 5.1a i 5.3 działają w wersji 5.1 i zostały potwierdzone przez użytkownika.
+Wersja 5.2 naprawia masowy MKV; D1 pozostaje do wykonania.
 
 ## Ustalony przebieg pracy
 
@@ -10,9 +11,9 @@ Punkty 5.1a i 5.3 są zaimplementowane w wersji 5.1; D1 pozostaje do wykonania.
 | 1 | Masowe SRT → WAV PL | Osobny zsynchronizowany WAV dla każdego SRT | Działa w 5.0 |
 | 1a | Połączenie dwóch częściowych WAV/AC3 PL | Jeden kompletny WAV PL | Gotowe w 5.1, zadanie 5.1a |
 | 2 | Masowe miksowanie WAV PL z audio wybranym z wideo | Gotowy MIX PL, np. AC3 | Gotowe w 5.1, zadanie 5.3, osobne okno |
-| 3 | Masowe muksowanie wideo + gotowy MIX PL + opcjonalne wymuszone SRT PL | MKV | Gotowe w 5.0 |
+| 3 | Masowe muksowanie wideo + gotowy MIX PL + opcjonalne wymuszone SRT PL | MKV | Naprawione w 5.2 |
 
-Masowe miksowanie audio ma otrzymać własne okno i korzystać z działającego
+Masowe miksowanie audio ma własne okno i korzysta z działającego
 mechanizmu pojedynczego Lektor PL. Obecny prosty moduł masowego MKV pozostaje
 przeznaczony do gotowych miksów. W jego tabeli nie dodajemy przełączania między
 surowym WAV a gotowym miksem ani etapu wcześniejszego miksowania.
@@ -136,7 +137,13 @@ okno, przeznaczone wyłącznie do tworzenia gotowych miksów audio.
   i ustawień: długość, synchronizacja, kodek, kanały, poziomy i ściszanie tła.
 - Wynikowy MIX PL ma nadawać się bezpośrednio do obecnego modułu masowego MKV.
 
-## 5.2 — gotowe: masowe tworzenie MKV
+## 5.2 — naprawione w wersji 5.2: masowe tworzenie MKV
+
+Usunięto błąd przebudowy widocznej tabeli po wczytaniu następnej kolumny,
+edycji komórek lub zmianie zestawu. Katalog wynikowy aktualizuje się od razu,
+a Start ponownie odczytuje widoczne pole. Dodano postęp sprawdzania całej
+kolejki, stan przerwanego wiersza i zapis sprawdzonego MKV bez nadpisywania
+pliku, który pojawił się w trakcie pracy. Okno pozostaje otwarte.
 
 Pozostawić dotychczasowy zakres i proste wejścia: **wideo + gotowy MIX PL +
 opcjonalne wymuszone napisy PL → MKV**. Zachować powiązanie według wierszy,

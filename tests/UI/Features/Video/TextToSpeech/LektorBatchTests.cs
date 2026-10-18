@@ -353,7 +353,8 @@ public class LektorBatchTests : IDisposable
         var window = new BatchMuxWindow(DispatchProxy.Create<IFileHelper, NoPickers>()); window.Show();
         try
         {
-            window.Table.OutputFolder = _folder; window.Table.SetColumn(MuxColumn.Video, [video2, video]);
+            window.GetLogicalDescendants().OfType<TextBox>().Single(c => c.Name == "BatchMkvOutputFolder").Text = _folder;
+            window.Table.SetColumn(MuxColumn.Video, [video2, video]);
             window.Table.SetColumn(MuxColumn.Audio, [mix2, mix]); window.Table.SetColumn(MuxColumn.Subtitles, [forced]);
             await window.RunAsync(true).WaitAsync(TimeSpan.FromSeconds(60), TestContext.Current.CancellationToken);
             foreach (var row in window.Table.Rows)

@@ -123,20 +123,27 @@ public sealed class BatchMuxTable
         return Rows.ToArray();
     }
 
-    internal async Task<BatchMuxRow[]> PreflightAsync(CancellationToken token)
+    internal async Task<BatchMuxRow[]> PreflightAsync(CancellationToken token, Action<string>? progress = null)
     {
+        token.ThrowIfCancellationRequested();
         var rows = ValidatePaths();
         LektorMkvMuxer.ResolveExecutable();
         foreach (var row in rows)
         {
-            token.ThrowIfCancellationRequested(); row.Status = "Kontrola plików…";
-            var video = await LektorMediaProbe.ReadAsync(row.Video, token);
-            if (!video.Tracks.Any(t => t.IsVideo)) throw new InvalidDataException($"Wiersz {row.Number}: plik wideo nie zawiera obrazu.");
-            var audio = await LektorMediaProbe.ReadAsync(row.Audio, token);
-            if (audio.Tracks.Count != 1 || audio.Tracks[0].Type != "Audio")
-                throw new InvalidDataException($"Wiersz {row.Number}: Miks PL musi zawierać dokładnie jedną ścieżkę audio.");
-            if (!string.IsNullOrEmpty(row.Subtitles)) await LektorMkvMuxer.ReadForcedSubtitlesAsync(row.Subtitles, token);
-            row.Status = "Gotowy do startu";
+            try
+            {
+                token.ThrowIfCancellationRequested(); row.Status = "Kontrola plików…";
+                progress?.Invoke($"{row.Number}/{rows.Length}: {row.Status}");
+                var video = await LektorMediaProbe.ReadAsync(row.Video, token);
+                if (!video.Tracks.Any(t => t.IsVideo)) throw new InvalidDataException($"Wiersz {row.Number}: plik wideo nie zawiera obrazu.");
+                var audio = await LektorMediaProbe.ReadAsync(row.Audio, token);
+                if (audio.Tracks.Count != 1 || audio.Tracks[0].Type != "Audio" || audio.Duration <= 0)
+                    throw new InvalidDataException($"Wiersz {row.Number}: Miks PL musi zawierać dokładnie jedną ścieżkę audio o znanej długości.");
+                if (!string.IsNullOrEmpty(row.Subtitles)) await LektorMkvMuxer.ReadForcedSubtitlesAsync(row.Subtitles, token);
+                row.Status = "Gotowy do startu";
+            }
+            catch (OperationCanceledException) { row.Status = "Przerwano"; throw; }
+            catch (Exception ex) { row.Status = "Błąd kontroli: " + ex.Message; throw; }
         }
         return rows;
     }
@@ -144,20 +151,27 @@ public sealed class BatchMuxTable
     internal async Task RunAsync(CancellationToken token, Action<string>? progress = null)
     {
         // Validate the entire queue before creating the first MKV.
-        var rows = await PreflightAsync(token);
+        var rows = await PreflightAsync(token, progress);
         foreach (var row in rows)
         {
-            token.ThrowIfCancellationRequested();
+            // Match the working batch MIX PL queue: publish a verified result without
+            // ever replacing a file that appeared after the queue's preflight check.
+            var temporary = Path.Combine(OutputFolder, ".batch-mkv-" + Guid.NewGuid().ToString("N") + ".mkv");
             try
             {
+                token.ThrowIfCancellationRequested();
                 BatchFileRules.CheckOutputs([row.Output], rows.SelectMany(r => new[] { r.Video, r.Audio, r.Subtitles }));
-                await LektorExportService.ExportAsync(row.Video, string.Empty, row.Audio, row.Output, 0,
+                await LektorExportService.ExportAsync(row.Video, string.Empty, row.Audio, temporary, 0,
                     new LektorExportOptions(), token, text => { row.Status = text; progress?.Invoke($"{row.Number}/{rows.Length}: {text}"); },
                     useExistingMix: true, forcedSubtitleFile: string.IsNullOrEmpty(row.Subtitles) ? null : row.Subtitles);
+                token.ThrowIfCancellationRequested();
+                File.Move(temporary, row.Output, overwrite: false);
                 row.Status = "Gotowe";
+                progress?.Invoke($"{row.Number}/{rows.Length}: zapisano {Path.GetFileName(row.Output)}");
             }
             catch (OperationCanceledException) { row.Status = "Przerwano"; throw; }
             catch { row.Status = "Błąd — kolejka zatrzymana"; throw; }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
     }
 }

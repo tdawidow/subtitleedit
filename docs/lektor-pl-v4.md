@@ -1,4 +1,35 @@
-# Lektor PL — wersja 5.1
+# Lektor PL — wersja 5.2
+
+## Poprawki 5.2 — masowe muksowanie MKV
+
+Naprawiono awarię widocznej tabeli przy wczytywaniu kolejnych katalogów,
+przestawianiu komórek i przygotowaniu następnego zestawu. Obsługa przebudowy
+wierszy korzysta teraz z tego samego zabezpieczenia co działający masowy MIX PL.
+Wklejenie lub wybranie katalogu wynikowego od razu aktualizuje całą kolumnę
+wyników. Start ponownie odczytuje katalog widoczny w oknie.
+
+1. Wczytaj osobne katalogi wideo i **gotowych miksów PL** (AC3, FLAC itd.).
+   Opcjonalnie wczytaj wymuszone napisy SRT PL. Każda kolumna sortuje pliki
+   alfabetycznie; pliki są wiązane według wierszy. Sprawdź te powiązania.
+2. Przeciąganie zamienia komórki w tej samej kolumnie. Prawy przycisk pozwala
+   wybrać/wkleić plik, wyczyścić komórkę, wstawić pustą z przesunięciem w dół
+   lub usunąć komórkę z przesunięciem w górę. Można usunąć cały wiersz.
+3. Wskaż jeden istniejący katalog wynikowy. **Sprawdź całą tabelę** sprawdza
+   kompletność, duplikaty, kolizje nazw i rzeczywiste ścieżki wszystkich plików.
+   Numer sprawdzanego wiersza i jego stan są widoczne. Start powtarza kontrolę
+   całej kolejki, zanim powstanie pierwszy wynik.
+4. **Uruchom muksowanie kolejki** tworzy `nazwa_wideo_PL.mkv` bez ponownego
+   wybierania plików. Używa dotychczasowego mechanizmu MKVToolNix i jego kontroli
+   ścieżek, flag oraz znaczników czasu obrazu. Gotowy MIX PL ma język PL i jest
+   domyślny; dodatkowe SRT PL mają flagi domyślne i wymuszone.
+5. Błąd lub **Stop** zatrzymuje dalsze wiersze. Ukończone MKV pozostają,
+   pliki tymczasowe przerwanej operacji są usuwane. Istniejący wynik, również
+   utworzony przez inny program już w trakcie kolejki, nie jest nadpisywany.
+6. Okno pozostaje otwarte. Można wyczyścić tabelę, wczytać kolejny zestaw,
+   wskazać kolejny katalog i od razu uruchomić następną kolejkę.
+
+Algorytm miksowania audio, łączenie części lektora WAV/AC3, masowy MIX PL,
+licznik TTS i właściwy mechanizm muksowania MKV pozostają bez zmian.
 
 ## Nowości 5.1
 

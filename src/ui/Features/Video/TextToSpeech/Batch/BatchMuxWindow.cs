@@ -21,10 +21,10 @@ public sealed class BatchMuxWindow : Window
     private readonly StackPanel _sources = new() { Spacing = 6 };
     private readonly ListBox _list;
     private readonly TextBox _destination = new() { Name = "BatchMkvOutputFolder", PlaceholderText = "Jeden katalog dla wszystkich wynikowych MKV" };
-    private readonly TextBlock _status = new() { Height = 52, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _status = new() { Name = "BatchMuxStatus", Height = 52, TextWrapping = TextWrapping.Wrap };
     private readonly Button _start = new() { Name = "StartBatchMux", Content = "Uruchom muksowanie kolejki" };
-    private readonly Button _check = new() { Content = "Sprawdź całą tabelę" };
-    private readonly Button _stop = new() { Content = "Zamknij" };
+    private readonly Button _check = new() { Name = "CheckBatchMux", Content = "Sprawdź całą tabelę" };
+    private readonly Button _stop = new() { Name = "StopBatchMux", Content = "Zamknij" };
     private readonly ProgressBar _progress = new() { IsIndeterminate = true, IsVisible = false };
     private CancellationTokenSource? _run;
     private bool _busy;
@@ -34,30 +34,41 @@ public sealed class BatchMuxWindow : Window
     {
         _files = files; _folders = folders ?? new FolderHelper();
         UiUtil.InitializeWindow(this, GetType().Name);
-        Title = "Lektor PL 5.1 — masowe muksowanie MKV";
+        Title = "Lektor PL 5.2 — masowe muksowanie MKV";
         Width = 1400; Height = 900; MinWidth = 900; MinHeight = 600; WindowState = WindowState.Maximized;
         foreach (var column in Enum.GetValues<MuxColumn>()) _sources.Children.Add(SourceRow(column));
         var output = new Grid { ColumnDefinitions = new ColumnDefinitions("185,*,Auto"), ColumnSpacing = 8 };
         output.Add(new TextBlock { Text = "Katalog wynikowy MKV", VerticalAlignment = VerticalAlignment.Center }, 0, 0);
         output.Add(_destination, 0, 1);
         var pick = new Button { Content = "Wybierz…" };
-        pick.Click += async (_, _) => { var folder = await _folders.PickFolderAsync(this, "Wspólny katalog MKV", _destination.Text); if (!string.IsNullOrEmpty(folder)) _destination.Text = folder; };
-        output.Add(pick, 0, 2); _sources.Children.Add(output);
-        _destination.TextChanged += (_, _) =>
+        pick.Click += async (_, _) =>
         {
-            if (_busy) return;
-            Table.OutputFolder = _destination.Text?.Trim().Trim('"') ?? string.Empty; Table.Rebuild();
+            try
+            {
+                var folder = await _folders.PickFolderAsync(this, "Wspólny katalog MKV", _destination.Text);
+                if (!string.IsNullOrEmpty(folder)) _destination.Text = folder;
+            }
+            catch (Exception ex) { _status.Text = ex.Message; }
+        };
+        output.Add(pick, 0, 2); _sources.Children.Add(output);
+        _destination.PropertyChanged += (_, e) =>
+        {
+            if (e.Property != TextBox.TextProperty || _busy) return;
+            ReadDestination();
         };
         var tableActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        var removeRow = new Button { Content = "Usuń zaznaczony wiersz" };
+        var removeRow = new Button { Name = "RemoveBatchMuxRow", Content = "Usuń zaznaczony wiersz" };
         removeRow.Click += (_, _) => { if (!_busy && _list?.SelectedItem is BatchMuxRow selected) Table.RemoveRow(selected.Number - 1); };
-        var clear = new Button { Content = "Wyczyść tabelę" };
+        var clear = new Button { Name = "ClearBatchMux", Content = "Wyczyść tabelę" };
         clear.Click += (_, _) => { if (!_busy) Table.Clear(); };
         tableActions.Children.Add(removeRow); tableActions.Children.Add(clear); _sources.Children.Add(tableActions);
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("45,3*,3*,3*,3*,2*"), ColumnSpacing = 4 };
         var labels = new[] { "Lp.", "Wideo", "Miks PL (gotowe audio)", "Wymuszone napisy PL (opcjonalnie)", "Wynikowy MKV", "Stan" };
         for (var i = 0; i < labels.Length; i++) header.Add(new TextBlock { Text = labels[i], FontWeight = FontWeight.SemiBold }, 0, i);
-        _list = new ListBox { Name = "BatchMuxTable", ItemsSource = Table.Rows, ItemTemplate = new FuncDataTemplate<BatchMuxRow>((row, _) => MakeRow(row!)) };
+        // Avalonia clears DataContext while recycling a rendered row after Rows.Clear().
+        // Use the same null-safe template as the working batch MIX PL window.
+        _list = new ListBox { Name = "BatchMuxTable", ItemsSource = Table.Rows,
+            ItemTemplate = new FuncDataTemplate<BatchMuxRow>((row, _) => row == null ? new Border() : MakeRow(row)) };
         var table = new Grid { RowDefinitions = new RowDefinitions("Auto,*"), RowSpacing = 6 };
         table.Add(header, 0, 0); table.Add(_list, 1, 0);
         _start.Classes.Add("accent");
@@ -67,7 +78,7 @@ public sealed class BatchMuxWindow : Window
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, HorizontalAlignment = HorizontalAlignment.Right, Children = { _check, _stop, _start } };
         var footer = new StackPanel { Spacing = 8, Children = { _status, _progress, actions } };
         var layout = new Grid { Margin = new Thickness(16), RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto"), RowSpacing = 12 };
-        layout.Add(_sources, 0, 0);
+        layout.Add(new ScrollViewer { Content = _sources, MaxHeight = 300 }, 0, 0);
         layout.Add(new TextBlock
         {
             Text = "Każda kolumna jest wczytywana alfabetycznie. Pliki łączymy WYŁĄCZNIE według wierszy. Przeciągnij komórkę na inną w tej samej kolumnie, aby zamienić je miejscami. Prawy przycisk: wstaw pustą / usuń i przesuń / wybierz plik. Pusta komórka SRT oznacza brak dodatkowych napisów.", TextWrapping = TextWrapping.Wrap
@@ -81,7 +92,7 @@ public sealed class BatchMuxWindow : Window
         var title = column == MuxColumn.Video ? "Katalog wideo" : column == MuxColumn.Audio ? "Katalog miksów PL" : "Katalog wymuszonych SRT";
         var text = new TextBox { Name = "BatchSource" + column, PlaceholderText = title };
         var choose = new Button { Content = "Wybierz katalog…" };
-        var load = new Button { Content = "Wczytaj" };
+        var load = new Button { Name = "LoadBatchMux" + column, Content = "Wczytaj" };
         void Load()
         {
             try
@@ -94,8 +105,12 @@ public sealed class BatchMuxWindow : Window
         }
         choose.Click += async (_, _) =>
         {
-            var folder = await _folders.PickFolderAsync(this, title, text.Text);
-            if (!string.IsNullOrWhiteSpace(folder)) { text.Text = folder; Load(); }
+            try
+            {
+                var folder = await _folders.PickFolderAsync(this, title, text.Text);
+                if (!string.IsNullOrWhiteSpace(folder)) { text.Text = folder; Load(); }
+            }
+            catch (Exception ex) { _status.Text = ex.Message; }
         };
         load.Click += (_, _) => Load();
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("185,*,Auto,Auto"), ColumnSpacing = 8 };
@@ -123,13 +138,24 @@ public sealed class BatchMuxWindow : Window
         var index = row.Number - 1;
         var cell = new Border
         {
+            Name = "BatchMuxCell" + column + row.Number,
             Padding = new Thickness(6), BorderThickness = new Thickness(0.5), BorderBrush = Brushes.Gray,
             Background = string.IsNullOrEmpty(path) && column != MuxColumn.Subtitles ? new SolidColorBrush(Color.FromArgb(35, 220, 50, 50)) : Brushes.Transparent,
             Child = new TextBlock { Text = string.IsNullOrEmpty(path) ? "(pusto)" : Path.GetFileName(path), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center },
         };
         ToolTip.SetTip(cell, string.IsNullOrEmpty(path) ? "Pusta komórka — prawy przycisk, aby wybrać plik" : path);
         var menu = new ContextMenu();
-        void Add(string text, Action action) { var item = new MenuItem { Header = text }; item.Click += (_, _) => { if (!_busy) action(); }; menu.Items.Add(item); }
+        void Add(string text, Action action)
+        {
+            var item = new MenuItem { Header = text };
+            item.Click += (_, _) =>
+            {
+                if (_busy) return;
+                try { action(); }
+                catch (Exception ex) { _status.Text = ex.Message; }
+            };
+            menu.Items.Add(item);
+        }
         var select = new MenuItem { Header = "Wybierz plik…" };
         select.Click += async (_, _) => { if (!_busy) await PickCell(column, index); }; menu.Items.Add(select);
         var paste = new MenuItem { Header = "Wklej ścieżkę" };
@@ -172,7 +198,8 @@ public sealed class BatchMuxWindow : Window
         cell.AddHandler(DragDrop.DragOverEvent, (_, e) => { e.DragEffects = !_busy && _drag?.Column == column ? DragDropEffects.Move : DragDropEffects.None; e.Handled = true; });
         cell.AddHandler(DragDrop.DropEvent, (_, e) =>
         {
-            if (!_busy && _drag is { } source && source.Column == column) Table.Swap(column, source.Row, index);
+            try { if (!_busy && _drag is { } source && source.Column == column) Table.Swap(column, source.Row, index); }
+            catch (Exception ex) { _status.Text = ex.Message; }
             e.Handled = true;
         });
         return cell;
@@ -197,13 +224,16 @@ public sealed class BatchMuxWindow : Window
         _stop.Content = "Stop"; _progress.IsVisible = true;
         try
         {
+            // Read the visible field again: a pasted/cleared destination must never reuse
+            // a previous queue's folder, even when Start follows the edit immediately.
+            ReadDestination();
             _status.Text = "Kontrola całej tabeli przed startem…";
             if (export)
             {
                 await Table.RunAsync(_run.Token, text => _status.Text = text);
                 _status.Text = $"Zakończono: {Table.Rows.Count} plików MKV. Okno jest gotowe do kolejnego zestawu.";
             }
-            else { await Table.PreflightAsync(_run.Token); _status.Text = "Wszystkie pliki sprawdzone. Sprawdź powiązania wierszy i uruchom muksowanie."; }
+            else { await Table.PreflightAsync(_run.Token, text => _status.Text = text); _status.Text = "Wszystkie pliki sprawdzone. Sprawdź powiązania wierszy i uruchom muksowanie."; }
         }
         catch (OperationCanceledException) { _status.Text = "Zatrzymano kolejkę. Zakończone MKV pozostają w katalogu wynikowym."; }
         catch (Exception ex) { _status.Text = "Zatrzymano: " + ex.Message; }
@@ -213,5 +243,13 @@ public sealed class BatchMuxWindow : Window
             _sources.IsEnabled = true; _list.IsEnabled = true; _start.IsEnabled = true; _check.IsEnabled = true;
             _stop.Content = "Zamknij"; _progress.IsVisible = false;
         }
+    }
+
+    private void ReadDestination()
+    {
+        var folder = _destination.Text?.Trim().Trim('"') ?? string.Empty;
+        if (Table.OutputFolder == folder) return;
+        Table.OutputFolder = folder;
+        Table.Rebuild();
     }
 }

@@ -33,7 +33,7 @@ public class TextToSpeechWindow : Window
     {
         vm.IsBatchMode = batchMode;
         UiUtil.InitializeWindow(this, GetType().Name);
-        Title = UiUtil.MakeWindowTitle(Se.Language.Video.TextToSpeech.Title + " — Lektor PL 5.1");
+        Title = UiUtil.MakeWindowTitle(Se.Language.Video.TextToSpeech.Title + " — Lektor PL 5.2");
         SizeToContent = SizeToContent.WidthAndHeight;
         CanResize = false;
 
@@ -102,7 +102,7 @@ public class TextToSpeechWindow : Window
         var settingsLayout = batchMode ? MakeBatchSettings(vm) : MakeSettingsControls(vm);
         if (batchMode)
         {
-            Title = "Lektor PL 5.1 — masowe tworzenie WAV z SRT";
+            Title = "Lektor PL 5.2 — masowe tworzenie WAV z SRT";
             SizeToContent = SizeToContent.Manual; CanResize = true;
             Width = 1400; Height = 900; MinWidth = 900; MinHeight = 600;
             WindowState = WindowState.Maximized;
