@@ -2,6 +2,7 @@
 using Nikse.SubtitleEdit.Core.Common;
 using Nikse.SubtitleEdit.Core.SubtitleFormats;
 using Nikse.SubtitleEdit.Features.Video.TextToSpeech.Voices;
+using Nikse.SubtitleEdit.Features.Video.TextToSpeech.Usage;
 using Nikse.SubtitleEdit.Logic.Config;
 using System;
 using System.Globalization;
@@ -91,9 +92,11 @@ public class TtsDownloadService : ITtsDownloadService
     private readonly HttpClient _httpClient;
 
     // Serialize Azure TTS requests, matching the existing per-subtitle workflow.
-    // No delay on successful requests. On HTTP 429, pause the queue and retry
-    // the same segment until success or cancellation.
+    // No delay on successful requests. Temporary 429 responses pause the same
+    // segment with bounded retries; quota exhaustion is a distinct terminal result.
     private static readonly SemaphoreSlim AzureSpeechGate = new(1, 1);
+    internal TtsUsageStore? UsageStoreOverride { get; set; }
+    internal Func<TimeSpan, CancellationToken, Task> AzureRetryDelay { get; set; } = Task.Delay;
     private const string WindowsPiperUrl = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip";
     private const string MacPiperUrl = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_macos_x64.tar.gz";
     private const string LinuxPiperUrl = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz";
@@ -531,14 +534,16 @@ public class TtsDownloadService : ITtsDownloadService
         CancellationToken cancellationToken)
     {
         var url = $"https://{region}.tts.speech.microsoft.com/cognitiveservices/v1";
-        var text = Utilities.UnbreakLine(inputText);
+        var text = TtsUsageText.Prepare(inputText);
 
         // Match the voice's locale so numbers and names use the right language.
         var locale = string.IsNullOrWhiteSpace(voice.Locale) ? "en-US" : voice.Locale;
         var data = $"<speak version='1.0' xml:lang='{locale}'><voice xml:lang='{locale}' xml:gender='{voice.Gender}' name='{voice.ShortName}'>{System.Net.WebUtility.HtmlEncode(text)}</voice></speak>";
 
-        // Serialize requests from every Azure TTS worker. On 429, keep the
-        // queue paused and retry this exact segment rather than skipping it.
+        var usage = UsageStoreOverride ?? new TtsUsageStore();
+        var account = TtsUsageAccount.Azure(apiKey, region);
+        var characters = TtsUsageText.Count(text, true);
+        // Reserve only when this request is ready to leave the serialized queue.
         await AzureSpeechGate.WaitAsync(cancellationToken);
         try
         {
@@ -546,6 +551,9 @@ public class TtsDownloadService : ITtsDownloadService
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                var reservation = usage.Reserve(account, characters);
+                TtsRequestProgress.Reservation(account, reservation != null ? characters : 0);
 
                 // Request content must be recreated for each retry.
                 using var request = new HttpRequestMessage(HttpMethod.Post, url);
@@ -556,11 +564,31 @@ public class TtsDownloadService : ITtsDownloadService
                 request.Headers.TryAddWithoutValidation("User-Agent", "SubtitleEdit");
                 request.Headers.TryAddWithoutValidation("Ocp-Apim-Subscription-Key", apiKey.Trim());
 
+                // Network failure/cancellation after dispatch leaves the reservation in the
+                // ledger. We cannot know whether Azure already processed/billed the request.
                 using var response = await _httpClient.SendAsync(request, cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var error = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
+                    var kind = TtsUsageText.Classify(response.StatusCode, error, true);
+                    TtsRequestProgress.Reservation(account, 0);
+                    if ((int)response.StatusCode < 500)
+                        usage.Resolve(account, reservation, false);
+                    else
+                        kind = TtsFailureKind.Uncertain;
+                    if (kind == TtsFailureKind.ProviderQuota) usage.MarkProviderQuotaExhausted(account);
+
+                    if (kind != TtsFailureKind.Throttled)
+                        throw new TtsServiceException(kind, $"Azure TTS: HTTP {(int)response.StatusCode}. {TruncateForLog(error)}");
+                }
 
                 if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
                 {
                     throttles++;
+                    if (throttles >= 5)
+                        throw new TtsServiceException(TtsFailureKind.Throttled,
+                            "Azure TTS: HTTP 429 po pięciu próbach. Usługa chwilowo ogranicza żądania; nie jest to potwierdzenie wyczerpania miesięcznego limitu. Spróbuj później.");
 
                     // Honor Retry-After when present. If not supplied (or too
                     // short), wait 15/30/60/120 seconds with a cap at 120.
@@ -574,26 +602,25 @@ public class TtsDownloadService : ITtsDownloadService
                     {
                         retryDelay = serverDelay;
                     }
+                    if (retryDelay > TimeSpan.FromMinutes(5))
+                        throw new TtsServiceException(TtsFailureKind.Throttled, "Azure TTS wymaga długiej przerwy przed ponowieniem. Spróbuj później.");
 
                     Se.WriteToolsLog($"Azure TTS: HTTP 429; waiting {retryDelay.TotalSeconds:0} s before retry {throttles + 1}. Cancel TTS to stop.");
+                    TtsRequestProgress.Report($"Azure TTS: chwilowe ograniczenie 429, ponowienie {throttles + 1}/5 za {retryDelay.TotalSeconds:0} s. Możesz zatrzymać pracę.");
                     // Keep the Azure queue stopped while waiting. The next
                     // attempt uses this exact SSML, with a fresh HTTP request.
-                    await Task.Delay(retryDelay, cancellationToken);
+                    await AzureRetryDelay(retryDelay, cancellationToken);
                     continue;
                 }
 
-                if (!response.IsSuccessStatusCode)
-                {
-                    var error = (await response.Content.ReadAsStringAsync(cancellationToken)).Trim();
-                    SeLogger.Error($"Azure TTS failed calling API at {url}: Status code={response.StatusCode} {TruncateForLog(error)}");
-                    return false; // Non-throttle errors (e.g. 401) are not retried.
-                }
-
+                // A processed response consumes the estimate even if downloading/converting
+                // the audio subsequently fails. Do not falsely credit local I/O failures.
+                usage.Resolve(account, reservation, true);
                 await response.Content.CopyToAsync(stream, cancellationToken);
                 if (stream.Length == 0)
                 {
                     SeLogger.Error($"Azure TTS returned an empty audio response from {url}.");
-                    return false;
+                    throw new TtsServiceException(TtsFailureKind.Uncertain, "Azure TTS zwrócił pustą odpowiedź audio. Żądanie mogło zużyć znaki.");
                 }
 
                 if (throttles > 0)

@@ -87,6 +87,56 @@ public static class InitToolbar
             isLastSeparator = false;
         }
 
+        stackPanelLeft.Children.Add(new Button
+        {
+            Name = "BatchTtsToolbarButton",
+            Content = new Optris.Icons.Avalonia.Icon { Value = IconNames.Waveform, FontSize = 28, Width = 32, Height = 32 },
+            Command = vm.ShowBatchTtsCommand, Background = Brushes.Transparent,
+            [AutomationProperties.NameProperty] = "Lektor PL: masowe SRT → WAV",
+            [ToolTip.TipProperty] = "Lektor PL 5.2 — masowe tworzenie WAV z listy SRT",
+        });
+        stackPanelLeft.Children.Add(new Button
+        {
+            Name = "NarratorJoinToolbarButton",
+            Content = new Optris.Icons.Avalonia.Icon { Value = IconNames.LinkVariant, FontSize = 28, Width = 32, Height = 32 },
+            Command = vm.ShowNarratorJoinCommand, Background = Brushes.Transparent,
+            [AutomationProperties.NameProperty] = "Lektor PL: połącz dwie części lektora",
+            [ToolTip.TipProperty] = "Lektor PL 5.2 — połącz części WAV / AC3 po przerwaniu TTS",
+        });
+        stackPanelLeft.Children.Add(new Button
+        {
+            Name = "BatchMixToolbarButton",
+            Content = new Optris.Icons.Avalonia.Icon { Value = IconNames.MusicNote, FontSize = 28, Width = 32, Height = 32 },
+            Command = vm.ShowBatchLektorMixCommand, Background = Brushes.Transparent,
+            [AutomationProperties.NameProperty] = "Lektor PL: masowe miksowanie audio MIX PL",
+            [ToolTip.TipProperty] = "Lektor PL 5.2 — masowy MIX PL: oryginalne audio filmu + WAV lektora",
+        });
+        stackPanelLeft.Children.Add(new Button
+        {
+            Name = "BatchMuxToolbarButton",
+            Content = new Optris.Icons.Avalonia.Icon { Value = IconNames.MovieOpenOutline, FontSize = 28, Width = 32, Height = 32 },
+            Command = vm.ShowBatchLektorMuxCommand, Background = Brushes.Transparent,
+            [AutomationProperties.NameProperty] = "Lektor PL: masowe muksowanie MKV",
+            [ToolTip.TipProperty] = "Lektor PL 5.2 — masowe MKV: wideo + Miks PL + wymuszone SRT",
+        });
+
+        stackPanelLeft.Children.Add(new Button
+        {
+            Name = "LektorExportToolbarButton",
+            Content = new Optris.Icons.Avalonia.Icon
+            {
+                Value = IconNames.SetMerge,
+                FontSize = 28,
+                Width = 32,
+                Height = 32,
+            },
+            Command = vm.ShowLektorExportCommand,
+            Background = Brushes.Transparent,
+            [AutomationProperties.NameProperty] = "Lektor PL — miks audio i MKV",
+            [ToolTip.TipProperty] = "Lektor PL — miksowanie audio / tworzenie MKV (bez wczytywania napisów)",
+        });
+        isLastSeparator = false;
+
         if (appearance.ToolbarShowSave)
         {
             stackPanelLeft.Children.Add(new Button
